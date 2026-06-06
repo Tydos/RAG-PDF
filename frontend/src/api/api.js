@@ -53,4 +53,6 @@ export const chat = (question, { topK = 5, filenames, searchMode = 'hybrid' } = 
     ...(filenames && filenames.length ? { filenames } : {}),
   });
 
+export const getHealth = () => request(`${API}/health`);
+
 export const getEvalSummary = () => request(`${API}/eval/summary`);
