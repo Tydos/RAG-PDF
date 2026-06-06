@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { chat, listDocuments } from '../api/api';
 
-const MODES = [
-  { value: 'hybrid',   label: 'Hybrid',   title: 'Vector + keyword, fused with RRF' },
-  { value: 'semantic', label: 'Semantic',  title: 'Vector cosine similarity only' },
-  { value: 'keyword',  label: 'Keyword',   title: 'Full-text search only (ts_rank)' },
-];
 
 const SendIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -23,7 +18,6 @@ const ArrowIcon = () => (
 
 export default function ChatSection({ messages, setMessages }) {
   const [input, setInput]                   = useState('');
-  const [searchMode, setSearchMode]         = useState('hybrid');
   const [loading, setLoading]               = useState(false);
   const [error, setError]                   = useState(null);
   const [blobByFilename, setBlobByFilename] = useState({});
@@ -48,7 +42,7 @@ export default function ChatSection({ messages, setMessages }) {
     setMessages((prev) => [...prev, { role: 'user', content: text, chunks: [] }]);
     setLoading(true);
     try {
-      const res = await chat(text, { searchMode });
+      const res = await chat(text);
       const assistantMsg = { role: 'assistant', content: res.answer ?? '', chunks: res.chunks ?? [], latency: res.latency };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
@@ -106,20 +100,6 @@ export default function ChatSection({ messages, setMessages }) {
       {error && <p className="chat-error" role="alert">{error}</p>}
 
       <div className="chat-input-bar">
-        <div className="mode-toggle" role="group" aria-label="Search mode">
-          {MODES.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              title={m.title}
-              className={searchMode === m.value ? 'active' : ''}
-              onClick={() => setSearchMode(m.value)}
-              aria-pressed={searchMode === m.value}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
         <form className="chat-input-row" onSubmit={handleSend}>
           <input
             className="chat-input"

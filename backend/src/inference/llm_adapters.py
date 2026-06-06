@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 import httpx
 
-from src.config import _CLAUDE_API_URL, _CLAUDE_API_VERSION, _HF_CHAT_URL
+from src.config import settings
 
 
 class LLMAdapter(ABC):
@@ -18,7 +18,7 @@ class ClaudeAdapter(LLMAdapter):
         self._client = httpx.AsyncClient(
             headers={
                 "x-api-key": token,
-                "anthropic-version": _CLAUDE_API_VERSION,
+                "anthropic-version": settings.claude_api_version,
                 "content-type": "application/json",
             },
             timeout=60,
@@ -42,7 +42,7 @@ class ClaudeAdapter(LLMAdapter):
         if system:
             payload["system"] = system
 
-        response = await self._client.post(_CLAUDE_API_URL, json=payload)
+        response = await self._client.post(settings.claude_api_url, json=payload)
         response.raise_for_status()
         data = response.json()
         content = data.get("content", [])
@@ -60,7 +60,7 @@ class HuggingFaceAdapter(LLMAdapter):
 
     async def generate(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
         response = await self._client.post(
-            _HF_CHAT_URL,
+            settings.hf_chat_url,
             json={
                 "model": self._model,
                 "messages": messages,

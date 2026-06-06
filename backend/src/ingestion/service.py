@@ -9,17 +9,17 @@ class IngestionService:
         self._embedder = embedder
         self._extractor = extractor
 
-    def index_document(self, filename: str, blob_url: str) -> None:
+    async def index_document(self, filename: str, blob_url: str) -> None:
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                urllib.request.urlretrieve(blob_url, tmp.name)
+                urllib.request.urlretrieve(blob_url.replace(" ", "%20"), tmp.name)
                 pages, indexes, texts, page_count = self._extractor.extract_chunks(tmp.name)
 
             if not texts:
                 self.db.set_status(filename, "skipped", 0)
                 return
 
-            vectors = self._embedder.embed(texts)
+            vectors = await self._embedder.embed(texts)
             self.db.delete_chunks(filename)
             self.db.save_chunks(filename, pages, indexes, texts, vectors)
             self.db.set_status(filename, "indexed", page_count)

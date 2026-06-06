@@ -74,17 +74,6 @@ class DBManager:
     ) -> None:
         return self._chunks.save_chunks(filename, pages, indexes, texts, vectors)
 
-    def save_advisory_chunks(
-        self,
-        filename: str,
-        pages: list[int],
-        indexes: list[int],
-        texts: list[str],
-        vectors: list[list[float]],
-        advisory_ids: list[str],
-    ) -> None:
-        return self._chunks.save_advisory_chunks(filename, pages, indexes, texts, vectors, advisory_ids)
-
     def delete_chunks(self, filename: str) -> None:
         return self._chunks.delete_chunks(filename)
 
@@ -95,11 +84,5 @@ class DBManager:
         k: int = 5,
         filenames: list[str] | None = None,
         search_mode: str = "hybrid",
-        source_type: str | None = None,
     ) -> list[dict]:
-        return self._chunks.search_chunks(query_vector, query_text, k, filenames, search_mode, source_type)
-
-    # --- advisory packages ---
-
-    def list_advisory_packages(self) -> list[dict]:
-        return self._uploads.list_advisory_packages()
+        return self._chunks.search_chunks(query_vector, query_text, k, filenames, search_mode)

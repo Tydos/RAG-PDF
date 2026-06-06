@@ -3,21 +3,19 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, File, Request, UploadFile
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from src.config import settings
 from src.interfaces import DatabaseProtocol, EmbedderProtocol, GeneratorProtocol
-from src.schemas import ChatRequest, IngestPackageRequest, QueryRequest, UploadCompleteRequest
-from src.inference.generator import create_rag_generator
-from src.inference.embedding import HuggingFaceEmbeddingService
+from src.schemas import ChatRequest, IngestRequest, QueryRequest
+from src.inference.rag_generator import create_rag_generator
+from src.inference.embeddings import HuggingFaceEmbeddingService
 from src.storage.database import DBManager
 from src.ingestion.service import IngestionService
 from src.ingestion.pdf_parser import PDFParser
-from src.ingestion.upload_token import BlobTokenError, create_client_upload_token
-from src.advisories.ingestion import AdvisoryIngestionService
+from src.ingestion.supabase_storage import upload_to_supabase
 from src.utils.latency import LatencyTracker
 
 logging.basicConfig(
@@ -36,7 +34,6 @@ async def lifespan(app: FastAPI):
     app.state.generator = create_rag_generator()
     app.state.extractor = PDFParser()
     app.state.pipeline = IngestionService(app.state.db, app.state.embedder, app.state.extractor)
-    app.state.advisory_pipeline = AdvisoryIngestionService(app.state.db, app.state.embedder)
     yield
 
 
@@ -63,10 +60,6 @@ def get_pipeline(request: Request) -> IngestionService:
     return request.app.state.pipeline
 
 
-def get_advisory_pipeline(request: Request) -> AdvisoryIngestionService:
-    return request.app.state.advisory_pipeline
-
-
 # --- Routes ---
 
 
@@ -84,31 +77,40 @@ def health(db: DBManager = Depends(get_db)):
     )
 
 
-@router.post("/request_upload_token")
-def blob_upload(body: dict[str, Any]):
-    """Step 1 of the upload flow: browser asks for a signed token to upload directly to Vercel Blob."""
-    try:
-        return create_client_upload_token(
-            body,
-            settings.blob_read_write_token.strip(),
-            allowed_content_types=list(set(settings.blob_allowed_content_types)),
-            maximum_size_in_bytes=settings.blob_max_pdf_bytes,
-        )
-    except BlobTokenError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e)) from e
-
-
-@router.post("/upload-complete")
-def upload_complete(
-    req: UploadCompleteRequest,
-    background_tasks: BackgroundTasks,
+@router.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: DBManager = Depends(get_db),
     pipeline: IngestionService = Depends(get_pipeline),
 ):
-    """Step 2 of the upload flow: browser notifies us the PDF is in blob storage so we can index it."""
-    db.add_upload(req.filename, req.blobUrl)
-    background_tasks.add_task(pipeline.index_document, req.filename, req.blobUrl)
-    return {"status": "upload recorded, indexing in progress"}
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    data = await file.read()
+    try:
+        public_url = await upload_to_supabase(
+            file.filename, data, file.content_type or "application/pdf"
+        )
+    except Exception as e:
+        logging.exception("Supabase upload failed")
+        raise HTTPException(status_code=500, detail=f"Storage upload failed: {e}") from e
+    db.add_upload(file.filename, public_url)
+    background_tasks.add_task(pipeline.index_document, file.filename, public_url)
+    return {"status": "upload recorded, indexing in progress", "url": public_url}
+
+
+@router.post("/ingest")
+async def ingest_document(
+    req: IngestRequest,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: DBManager = Depends(get_db),
+    pipeline: IngestionService = Depends(get_pipeline),
+):
+    if not req.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    db.add_upload(req.filename, req.url)
+    background_tasks.add_task(pipeline.index_document, req.filename, req.url)
+    return {"status": "upload recorded, indexing in progress", "url": req.url}
 
 
 @router.get("/documents")
@@ -143,7 +145,6 @@ async def query(
             k=top_k,
             filenames=req.filenames or None,
             search_mode=req.search_mode,
-            source_type=req.source_type,
         )
 
     answer: str | None = None
@@ -278,36 +279,6 @@ def eval_summary():
             }
 
     return {"retrieval": retrieval, "answer_quality": answer_quality}
-
-
-@router.post("/ingest/package")
-async def ingest_package(
-    req: IngestPackageRequest,
-    background_tasks: BackgroundTasks,
-    advisory_pipeline: AdvisoryIngestionService = Depends(get_advisory_pipeline),
-):
-    """Trigger background ingestion of security advisories for a package from OSV.dev."""
-    background_tasks.add_task(advisory_pipeline.ingest_package, req.name, req.ecosystem)
-    return {"status": "ingestion started", "package": req.name, "ecosystem": req.ecosystem}
-
-
-@router.get("/packages")
-def list_packages(db: DBManager = Depends(get_db)):
-    """List all packages with indexed security advisories."""
-    return {"packages": db.list_advisory_packages()}
-
-
-@router.delete("/packages/{name}")
-def delete_package(name: str, ecosystem: str = "PyPI", db: DBManager = Depends(get_db)):
-    """Remove all advisory chunks for a package."""
-    from src.advisories.ingestion import advisory_filename
-
-    filename = advisory_filename(name, ecosystem)
-    try:
-        db.remove_upload(filename)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Package '{name}' not found")
-    return {"deleted": name, "ecosystem": ecosystem}
 
 
 @router.delete("/files/{filename}")

@@ -4,7 +4,6 @@ import UploadSection from './components/UploadSection';
 import DocumentsSection from './components/DocumentsSection';
 import ChatSection from './components/ChatSection';
 import EvalDashboard from './components/EvalDashboard';
-import CybersecSection from './components/CybersecSection';
 import { getHistory } from './api/api';
 
 export default function App() {
@@ -32,8 +31,6 @@ export default function App() {
               <ChatSection messages={messages} setMessages={setMessages} />
             </main>
           </div>
-        ) : view === 'cybersec' ? (
-          <CybersecSection />
         ) : (
           <EvalDashboard messages={messages} />
         )}

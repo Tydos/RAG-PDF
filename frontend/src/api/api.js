@@ -1,5 +1,3 @@
-import { upload } from '@vercel/blob/client';
-
 const API = process.env.REACT_APP_API_PREFIX || '';
 
 async function request(url, options) {
@@ -24,18 +22,10 @@ const postJSON = (url, body) =>
     body: JSON.stringify(body),
   });
 
-export const uploadPDF = async (file, onProgress) => {
-  const result = await upload(file.name, file, {
-    access: 'public',
-    handleUploadUrl: `${API}/request_upload_token`,
-    contentType: file.type || 'application/pdf',
-    onUploadProgress: onProgress
-      ? ({ loaded, total }) => {
-          if (total > 0) onProgress(loaded / total);
-        }
-      : undefined,
-  });
-  return postJSON(`${API}/upload-complete`, { filename: result.pathname, blobUrl: result.url });
+export const uploadPDF = async (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return request(`${API}/upload`, { method: 'POST', body: form });
 };
 
 export const listDocuments = () =>
@@ -64,24 +54,3 @@ export const chat = (question, { topK = 5, filenames, searchMode = 'hybrid' } = 
   });
 
 export const getEvalSummary = () => request(`${API}/eval/summary`);
-
-// --- advisory / cybersec ---
-
-export const ingestPackage = (name, ecosystem) =>
-  postJSON(`${API}/ingest/package`, { name, ecosystem });
-
-export const listPackages = () =>
-  request(`${API}/packages`).then((d) => d.packages);
-
-export const deletePackage = (name, ecosystem = 'PyPI') =>
-  request(`${API}/packages/${encodeURIComponent(name)}?ecosystem=${encodeURIComponent(ecosystem)}`, {
-    method: 'DELETE',
-  });
-
-export const queryAdvisories = (question, { topK = 5, searchMode = 'hybrid' } = {}) =>
-  postJSON(`${API}/query`, {
-    question,
-    top_k: topK,
-    search_mode: searchMode,
-    source_type: 'advisory',
-  });

@@ -4,7 +4,7 @@
 .claude/skill-lock.json
 .agents
 .claude/skills/
-
+.vscode/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

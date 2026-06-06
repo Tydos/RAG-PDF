@@ -56,39 +56,6 @@ class UploadStore:
             )
             conn.commit()
 
-    def list_advisory_packages(self) -> list[dict]:
-        sql = """
-            SELECT u.filename, u.uploaded_at, u.status, u.page_count AS advisory_count,
-                   COALESCE(c.chunk_count, 0) AS chunk_count
-            FROM uploads u
-            LEFT JOIN (
-                SELECT filename, COUNT(*) AS chunk_count FROM chunks GROUP BY filename
-            ) c ON c.filename = u.filename
-            WHERE u.filename LIKE 'advisory::%'
-            ORDER BY u.uploaded_at DESC NULLS LAST
-        """
-        with psycopg.connect(self._conninfo) as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(sql)
-                rows = cur.fetchall()
-
-        out: list[dict] = []
-        for r in rows:
-            # filename pattern: advisory::{name}::{ecosystem}
-            parts = r["filename"].split("::")
-            name = parts[1] if len(parts) > 1 else r["filename"]
-            ecosystem = parts[2] if len(parts) > 2 else ""
-            uploaded_at: datetime | None = r["uploaded_at"]
-            out.append({
-                "name": name,
-                "ecosystem": ecosystem,
-                "status": r["status"] or "pending",
-                "advisory_count": int(r["advisory_count"] or 0),
-                "chunk_count": int(r["chunk_count"] or 0),
-                "last_ingested": uploaded_at.isoformat() if uploaded_at else None,
-            })
-        return out
-
     def remove_upload(self, filename: str) -> None:
         with psycopg.connect(self._conninfo) as conn:
             cur = conn.execute(
@@ -107,7 +74,6 @@ class UploadStore:
             LEFT JOIN (
                 SELECT filename, COUNT(*) AS chunk_count FROM chunks GROUP BY filename
             ) c ON c.filename = u.filename
-            WHERE u.filename NOT LIKE 'advisory::%'
             ORDER BY u.uploaded_at DESC NULLS LAST
         """
         with psycopg.connect(self._conninfo) as conn:

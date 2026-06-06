@@ -34,11 +34,6 @@ ALTER TABLE chunks
   GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
 """
 
-_ADD_ADVISORY_COLUMNS = """
-ALTER TABLE chunks ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'pdf';
-ALTER TABLE chunks ADD COLUMN IF NOT EXISTS advisory_id TEXT;
-"""
-
 _CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS chunks_filename_idx ON chunks(filename);",
     "CREATE INDEX IF NOT EXISTS chunks_embedding_idx ON chunks USING ivfflat (embedding vector_cosine_ops);",
@@ -57,10 +52,6 @@ class ChunkStore:
                 conn.execute(_CREATE_VECTOR_EXTENSION)
                 conn.execute(_CREATE_CHUNKS_TABLE)
                 conn.execute(_ADD_TSVECTOR_COLUMN)
-                for stmt in _ADD_ADVISORY_COLUMNS.strip().split(";"):
-                    stmt = stmt.strip()
-                    if stmt:
-                        conn.execute(stmt)
                 for stmt in _CREATE_INDEXES:
                     conn.execute(stmt)
                 conn.commit()
@@ -103,30 +94,6 @@ class ChunkStore:
                 )
             conn.commit()
 
-    def save_advisory_chunks(
-        self,
-        filename: str,
-        pages: list[int],
-        indexes: list[int],
-        texts: list[str],
-        vectors: list[list[float]],
-        advisory_ids: list[str],
-    ) -> None:
-        if not texts:
-            return
-        rows = [
-            (filename, page, idx, text, self._to_pg_vector(vec), adv_id)
-            for page, idx, text, vec, adv_id in zip(pages, indexes, texts, vectors, advisory_ids)
-        ]
-        with psycopg.connect(self._conninfo) as conn:
-            with conn.cursor() as cur:
-                cur.executemany(
-                    "INSERT INTO chunks (filename, page, chunk_index, content, embedding, source_type, advisory_id) "
-                    "VALUES (%s, %s, %s, %s, %s::vector, 'advisory', %s)",
-                    rows,
-                )
-            conn.commit()
-
     def delete_chunks(self, filename: str) -> None:
         with psycopg.connect(self._conninfo) as conn:
             conn.execute("DELETE FROM chunks WHERE filename = %s", (filename,))
@@ -139,16 +106,15 @@ class ChunkStore:
         k: int = 5,
         filenames: list[str] | None = None,
         search_mode: str = "hybrid",
-        source_type: str | None = None,
     ) -> list[dict]:
         vec = self._to_pg_vector(query_vector)
         if search_mode == "semantic" or not query_text.strip():
-            return self._search_semantic(vec, k, filenames, source_type)
+            return self._search_semantic(vec, k, filenames)
         if search_mode == "keyword":
-            return self._search_keyword(query_text, k, filenames, source_type)
-        return self._search_hybrid(vec, query_text, k, filenames, source_type)
+            return self._search_keyword(query_text, k, filenames)
+        return self._search_hybrid(vec, query_text, k, filenames)
 
-    def _search_semantic(self, vec: str, k: int, filenames: list[str] | None, source_type: str | None) -> list[dict]:
+    def _search_semantic(self, vec: str, k: int, filenames: list[str] | None) -> list[dict]:
         sql = (
             "SELECT filename, page, chunk_index, content, "
             "1 - (embedding <=> %s::vector) AS score FROM chunks "
@@ -158,9 +124,6 @@ class ChunkStore:
         if filenames:
             conditions.append("filename = ANY(%s)")
             params.append(filenames)
-        if source_type:
-            conditions.append("source_type = %s")
-            params.append(source_type)
         if conditions:
             sql += "WHERE " + " AND ".join(conditions) + " "
         sql += "ORDER BY embedding <=> %s::vector LIMIT %s"
@@ -179,7 +142,7 @@ class ChunkStore:
             for r in rows
         ]
 
-    def _search_keyword(self, query_text: str, k: int, filenames: list[str] | None, source_type: str | None) -> list[dict]:
+    def _search_keyword(self, query_text: str, k: int, filenames: list[str] | None) -> list[dict]:
         tsq = self._to_tsquery(query_text, op="|")
         sql = (
             "SELECT filename, page, chunk_index, content, "
@@ -191,9 +154,6 @@ class ChunkStore:
         if filenames:
             conditions.append("filename = ANY(%s)")
             params.append(filenames)
-        if source_type:
-            conditions.append("source_type = %s")
-            params.append(source_type)
         sql += "WHERE " + " AND ".join(conditions) + " "
         sql += "ORDER BY score DESC LIMIT %s"
         params.append(k)
@@ -211,15 +171,13 @@ class ChunkStore:
             for r in rows
         ]
 
-    def _search_hybrid(self, vec: str, query_text: str, k: int, filenames: list[str] | None, source_type: str | None) -> list[dict]:
+    def _search_hybrid(self, vec: str, query_text: str, k: int, filenames: list[str] | None) -> list[dict]:
         tsq = self._to_tsquery(query_text)
         pool_size = k * 4
 
         conditions = []
         if filenames:
             conditions.append("filename = ANY(%(filenames)s)")
-        if source_type:
-            conditions.append("source_type = %(source_type)s")
         row_filter = " AND ".join(conditions) if conditions else "TRUE"
 
         sql = f"""
@@ -249,7 +207,7 @@ class ChunkStore:
               )
             SELECT * FROM fused ORDER BY score DESC LIMIT %(k)s
         """
-        params = {"vec": vec, "tsq": tsq, "pool": pool_size, "k": k, "filenames": filenames, "source_type": source_type}
+        params = {"vec": vec, "tsq": tsq, "pool": pool_size, "k": k, "filenames": filenames}
 
         with psycopg.connect(self._conninfo) as conn:
             total = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]

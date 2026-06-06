@@ -1,9 +1,13 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -12,14 +16,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     query_top_k_max: int = 20
 
-    blob_read_write_token: str = ""
-    blob_token_ttl_ms: int = 60 * 60 * 1000
-    blob_max_pdf_bytes: int = 100 * 1024 * 1024
-    blob_allowed_content_types: list[str] = [
-        "application/pdf",
-        "application/x-pdf",
-        "application/octet-stream",
-    ]
+    supabase_url: str = "https://zzukjhligshxrdbpcsjz.supabase.co"
+    supabase_service_key: str = ""
+    supabase_bucket: str = "files"
 
     hf_token: str = ""
     hf_embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -40,8 +39,9 @@ class Settings(BaseSettings):
 
     llm_temperature: float = 0.2
 
+    hf_chat_url: str = "https://router.huggingface.co/v1/chat/completions"
+    claude_api_url: str = "https://api.anthropic.com/v1/messages"
+    claude_api_version: str = "2023-06-01"
+
 
 settings = Settings()
-_HF_CHAT_URL = "https://router.huggingface.co/v1/chat/completions"
-_CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
-_CLAUDE_API_VERSION = "2023-06-01"

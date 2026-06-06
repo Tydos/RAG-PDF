@@ -1,165 +1,98 @@
 # Antares
 
-Upload PDFs and ask questions with persistent chat memory. The app extracts, chunks, and embeds your documents — then uses hybrid search (semantic + keyword, fused with Reciprocal Rank Fusion) and an LLM to answer questions with inline citations. Conversation history is stored in PostgreSQL and restored on page load.
+Upload PDFs, ask questions. Hybrid search (semantic + keyword, RRF-fused) + LLM answers with inline citations and persistent chat history.
 
-Visit here -> https://rag-pdf-fawn.vercel.app/
+**Live → https://rag-pdf-fawn.vercel.app/**
 
 ![chat page](docs/chatpage.png)
 
 ![eval page](docs/evalpage.png)
 
-The app has two views, toggled from the navbar:
-- **Chat** — sidebar with drag-and-drop upload + document list, persistent chat panel
-- **Evaluation** — session stats, retrieval accuracy table, and answer quality metrics
+## Stack
 
-## Core Features
-
-- PDF upload via browser → Vercel Blob (signed token, direct upload)
-- Document ingestion pipeline: extract text (pypdf) → chunk (800 chars, 100 overlap) → embed (HuggingFace, 384-dim) → store in PostgreSQL (pgvector + tsvector)
-- Hybrid search: semantic (cosine similarity) + keyword (full-text search), fused via Reciprocal Rank Fusion (RRF)
-- LLM answer generation with inline citations
-- Persistent chat history stored in PostgreSQL, restored on page load
-- Evaluation dashboard — live session stats, retrieval accuracy, and answer quality metrics
-
-## Architecture Overview
-
-**Upload flow**
-1. Browser requests a signed upload token from `/request_upload_token` (HMAC-SHA256, 1-hour TTL)
-2. `@vercel/blob` SDK uploads the PDF directly from the browser to Vercel Blob CDN
-3. Browser calls `/upload-complete`; backend records the file and starts a background task
-4. Background task: download PDF → extract text per page (pypdf) → chunk (800 chars, 100 overlap) → embed (HuggingFace, 384-dim) → store in PostgreSQL with pgvector + tsvector
-
-**Chat flow (persistent)**
-1. Browser POSTs `{question, search_mode?}` to `/chat`
-2. Backend loads full conversation history from the `messages` table
-3. Embeds question → searches chunks → LLM generates answer with history context (last 6 turns)
-4. Both turns saved to `messages`; response includes answer, chunks, and latency
-5. On page load, `GET /history` restores the full thread
-
-**Search modes**
-- **hybrid** (default): pgvector cosine search + PostgreSQL `ts_rank`, fused with Reciprocal Rank Fusion (RRF, k=60)
-- **semantic**: pgvector cosine search only
-- **keyword**: full-text search only, OR-joined `to_tsquery`
-
-## Tech Stack
-
-| Layer | Technology |
+| | |
 |---|---|
-| Frontend | React 18, `@vercel/blob` |
-| Backend | FastAPI, Python 3.10 |
-| Database | PostgreSQL + pgvector + tsvector (GIN index) |
-| Search | Hybrid RRF — pgvector cosine + `ts_rank` full-text |
-| Embeddings | HuggingFace Inference API — `sentence-transformers/all-MiniLM-L6-v2` (384-dim) |
-| LLM | HuggingFace Inference API — `meta-llama/Llama-3.2-1B-Instruct` |
-| Storage | Vercel Blob |
-| Infra | Docker Compose (local), Vercel (prod) |
+| Frontend | React 18 |
+| Backend | FastAPI + Python 3.11 |
+| Database | PostgreSQL + pgvector + tsvector (Supabase) |
+| Embeddings | HuggingFace — `all-MiniLM-L6-v2` (384-dim) |
+| LLM | HuggingFace — `meta-llama/Llama-3.2-1B-Instruct` or Claude |
+| Storage | Supabase Storage |
 
-## Environment Variables
+## How it works
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `DATABASE_URL` | Yes | — | PostgreSQL connection string |
-| `BLOB_READ_WRITE_TOKEN` | Yes | — | Vercel Blob token for minting signed client upload tokens |
-| `HF_TOKEN` | No | — | HuggingFace API key (embeddings + LLM) |
-| `HF_EMBED_MODEL` | No | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
-| `HF_LLM_MODEL` | No | `meta-llama/Llama-3.2-1B-Instruct` | LLM for answer generation |
-| `CLAUDE_TOKEN` | No | — | Anthropic API key — required for gold set generation and answer quality evaluation |
+1. **Upload** — browser POSTs PDF to `/upload`; backend stores it in Supabase Storage
+2. **Index** — background task: extract text → chunk (800 chars, 100 overlap) → embed → store in PostgreSQL
+3. **Chat** — question → embed → hybrid search → LLM → answer with citations; full history saved per session
 
-Without `HF_TOKEN`, embedding and answer generation will fail. Without `BLOB_READ_WRITE_TOKEN`, uploads will fail. The app still starts and serves `/health`.
+## Setup
 
-## API Summary
+```bash
+# Backend
+cd backend && uv sync
+cp .env.example .env   # fill in values below
+uvicorn src.main:app --reload
+
+# Frontend
+cd frontend && npm install && npm start
+```
+
+**.env**
+
+```
+DATABASE_URL=postgresql://postgres:[password]@db.[project].supabase.co:5432/postgres
+SUPABASE_SERVICE_KEY=...
+HF_TOKEN=hf_...
+CLAUDE_TOKEN=sk-ant-...   # optional — used for evaluation
+```
+
+**frontend/.env**
+
+```
+REACT_APP_API_PREFIX=http://localhost:8000
+REACT_APP_SUPABASE_URL=https://[project].supabase.co
+REACT_APP_SUPABASE_ANON_KEY=...
+REACT_APP_SUPABASE_BUCKET=files
+```
+
+> **Supabase setup**: disable RLS on the `uploads` and `chunks` tables, or grant service role full access.
+
+## API
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/health` | Liveness + DB connectivity status |
-| POST | `/request_upload_token` | Mint a signed client token for browser → Vercel Blob upload |
-| POST | `/upload-complete` | Record upload and schedule background indexing |
-| GET | `/documents` | List all documents with status, page count, and chunk count |
-| DELETE | `/files/{filename}` | Delete a document and all its chunks |
-| POST | `/chat` | Persistent chat — search + LLM with conversation history |
-| GET | `/history` | Return full conversation history |
-| POST | `/query` | Stateless search + LLM (no history saved, kept for compatibility) |
-| GET | `/eval/summary` | Serve pre-computed retrieval + answer quality results for the Eval Dashboard |
+| GET | `/health` | Liveness + DB status |
+| POST | `/upload` | Upload PDF (multipart) — stores + queues indexing |
+| GET | `/documents` | List documents with status and chunk count |
+| DELETE | `/files/{filename}` | Delete document and all its chunks |
+| POST | `/chat` | Chat with history (question, top_k, search_mode) |
+| GET | `/history` | Full conversation history |
+| POST | `/query` | Stateless search + LLM (no history) |
+| GET | `/eval/summary` | Pre-computed retrieval + answer quality results |
 
-`top_k` is clamped to [1, 20]. `filenames` is optional; omit to search across all documents.
+## Database
 
-## Database Schema
+![schema](docs/image.png)
 
-![alt text](docs/image.png)
+- **`uploads`** — one row per PDF (`filename` PK, `blob_url`, `status`, `page_count`)
+- **`chunks`** — text chunks with 384-dim vector + tsvector; cascades on delete
+- **`messages`** — chat history (`role`, `content`, `chunks` JSONB)
 
-Three tables share a single PostgreSQL database:
+## Evaluation
 
-- **`uploads`** — one row per PDF. Tracks `filename` (PK), `blob_url`, `uploaded_at`, `status` (`pending` → `indexed` / `skipped` / `failed`), and `page_count`.
-- **`chunks`** — one row per text chunk. Foreign-keyed to `uploads(filename)` with `ON DELETE CASCADE`, so deleting a document removes all its chunks automatically. Stores `content`, a 384-dim `embedding` (pgvector), and a generated `content_tsv` tsvector column for full-text search. Indexed with IVFFlat (cosine) for semantic search and GIN for keyword search.
-- **`messages`** — one row per chat turn. Stores `role` (`user` / `assistant`), `content`, and `chunks` (JSONB snapshot of the retrieved chunks for that turn).
-
-| Status | Meaning |
-|---|---|
-| `pending` | Upload received; indexing in progress |
-| `indexed` | Text extracted, chunked, and embedded successfully |
-| `skipped` | PDF contained no extractable text (scanned/image-only) |
-| `failed` | Indexing error (check logs) |
-
-## Evaluation Summary
-
-Three scripts live in `backend/tests/retriever-evaluation/`:
-
-**1. Generate a gold set** — samples random chunks from the indexed PDFs and uses Claude to write a factual QA pair per chunk. Appends to the output file on repeated runs.
-
-```bash
-# from backend/
-python tests/retriever-evaluation/generate_gold_set.py --sample-n 20
-# options: --model, --out, --max-tokens, --delay
-```
-
-**2. Evaluate retrieval** — runs every question against the live `/query` API across all three search modes and reports Precision@k, Recall@k, and F1.
-
-```bash
-# from backend/
-python tests/retriever-evaluation/evaluate.py \
-  --qa tests/retriever-evaluation/gold_set.json \
-  --top-k 5 \
-  --out tests/retriever-evaluation/results.json
-```
-
-Results on a 20-question gold set sampled from indexed ML/AI textbooks (top-k=5):
+Results on a 20-question gold set from ML/AI textbooks (top-k=5):
 
 | Mode | Precision@5 | Recall@5 | F1 |
 |---|---|---|---|
-| hybrid | 10.0% | 40.0% (8/20) | 16.0% |
-| semantic | 6.0% | 30.0% (6/20) | 10.0% |
-| keyword | 19.0% | 80.0% (16/20) | 30.7% |
+| hybrid | 10% | 40% | 16% |
+| semantic | 6% | 30% | 10% |
+| keyword | 19% | 80% | 31% |
 
-Keyword search leads on this corpus because the gold set questions are generated directly from chunk text, making exact-term overlap high. Hybrid and semantic search are expected to gain ground on paraphrased or conversational queries.
-
-**3. Evaluate answer quality** — uses Claude as a judge to score each generated answer on faithfulness (is every claim grounded in the retrieved context?) and answer relevance (does the answer address the question?). Requires a gold set and a running API.
-
-```bash
-# from project root
-PYTHONPATH=backend backend/.venv/bin/python backend/tests/retriever-evaluation/answer_quality.py \
-  --qa backend/tests/retriever-evaluation/gold_set.json \
-  --mode hybrid \
-  --out backend/tests/retriever-evaluation/aq_results.json
-# use --mode all to evaluate all three search modes
-```
-
-Results on a 10-question gold set from indexed ML/AI papers (`meta-llama/Llama-3.2-1B-Instruct`, top-k=5):
-
-| Mode | Faithfulness | Answer Relevance | Scored | Skipped |
-|---|---|---|---|---|
-| hybrid | 0.56 | 0.48 | 7/10 | 3 |
-
-- **Faithfulness 0.56** — the 1B Llama model frequently hallucinated claims not present in the retrieved context.
-- **Answer Relevance 0.48** — answers were often technically grounded but did not directly address the question.
-- **3 skipped** — retrieval returned no chunks for those questions (retrieval failure, not generation failure).
-
-These scores establish the baseline before planned improvements (re-ranking, better chunking, stronger LLM).
+Keyword wins on this corpus because questions are generated directly from chunk text. Hybrid/semantic are expected to improve on paraphrased queries.
 
 ## Limitations
 
-- No OCR support — scanned or image-only PDFs are marked `skipped`
-- No user authentication — conversation history is global (single shared thread)
-- Maximum 100 MB per PDF
-- Chunking is character-based; very short pages may produce fewer or no chunks
-- LLM context is capped at the last 6 conversation turns to stay within token limits
-- Ingestion pipeline is still not async
+- No OCR — image-only PDFs are marked `skipped`
+- No auth — chat history is global (single shared thread)
+- Max 100 MB per PDF
+- LLM context capped at last 6 turns
