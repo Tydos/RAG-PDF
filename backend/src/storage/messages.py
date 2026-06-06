@@ -8,8 +8,8 @@
 
 import json
 
+import psycopg
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
 
 _CREATE_MESSAGES_TABLE = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -23,17 +23,17 @@ CREATE TABLE IF NOT EXISTS messages (
 
 
 class MessageStore:
-    def __init__(self, pool: ConnectionPool) -> None:
-        self._pool = pool
+    def __init__(self, conninfo: str) -> None:
+        self._conninfo = conninfo
         self._create_tables()
 
     def _create_tables(self) -> None:
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             conn.execute(_CREATE_MESSAGES_TABLE)
             conn.commit()
 
     def add_message(self, role: str, content: str, chunks: list[dict] | None = None) -> None:
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             conn.execute(
                 "INSERT INTO messages (role, content, chunks) VALUES (%s, %s, %s)",
                 (role, content, json.dumps(chunks) if chunks else None),
@@ -41,7 +41,7 @@ class MessageStore:
             conn.commit()
 
     def get_messages(self, limit: int = 50) -> list[dict]:
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     "SELECT role, content, chunks, created_at FROM messages ORDER BY created_at ASC LIMIT %s",

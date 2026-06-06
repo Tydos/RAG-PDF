@@ -10,7 +10,7 @@
 
 import logging
 
-from psycopg_pool import ConnectionPool
+import psycopg
 
 from src.config import settings
 from src.storage.chunks import ChunkStore
@@ -18,29 +18,22 @@ from src.storage.messages import MessageStore
 from src.storage.uploads import UploadStore
 
 class DBManager:
-    def __init__(self, pool: ConnectionPool) -> None:
-        self._pool = pool
-        self._uploads = UploadStore(pool)
-        self._messages = MessageStore(pool)
-        self._chunks = ChunkStore(pool)
+    def __init__(self, conninfo: str) -> None:
+        self._conninfo = conninfo
+        self._uploads = UploadStore(conninfo)
+        self._messages = MessageStore(conninfo)
+        self._chunks = ChunkStore(conninfo)
 
     @classmethod
     def create(cls) -> "DBManager":
         url = settings.database_url.strip()
         if not url:
             raise ValueError("DATABASE_URL is not set.")
-        pool = ConnectionPool(
-            conninfo=url,
-            min_size=settings.database_pool_min_size,
-            max_size=settings.database_pool_max_size,
-            open=True,
-            kwargs={"autocommit": False, "prepare_threshold": None},
-        )
-        return cls(pool)
+        return cls(url)
 
     def ping(self) -> bool:
         try:
-            with self._pool.connection() as conn:
+            with psycopg.connect(self._conninfo) as conn:
                 conn.execute("SELECT 1")
             return True
         except Exception:

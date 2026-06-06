@@ -38,14 +38,14 @@ class LLMResponseGenerator:
         self._max_tokens = max_tokens
         self._temperature = temperature
 
-    def generate(self, question: str, chunks: list[dict], history: list[dict]) -> str:
+    async def generate(self, question: str, chunks: list[dict], history: list[dict]) -> str:
         if not chunks:
             return _NO_CONTEXT_ANSWER
 
         messages = PromptBuilder.build_messages(question, chunks, history)
 
         try:
-            text = self._llm.generate(
+            text = await self._llm.generate(
                 messages=messages,
                 max_tokens=self._max_tokens,
                 temperature=self._temperature,
@@ -66,6 +66,7 @@ def create_rag_generator() -> LLMResponseGenerator:
         max_tokens = settings.claude_max_tokens
         logging.info("Using Claude adapter (model: %s)", settings.claude_model)
     else:
+        from src.inference.adapters import HuggingFaceAdapter
         llm = HuggingFaceAdapter(model=settings.hf_llm_model, token=settings.hf_token)
         max_tokens = settings.hf_llm_max_tokens
         logging.info("Using HuggingFace adapter (model: %s)", settings.hf_llm_model)

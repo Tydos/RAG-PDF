@@ -10,8 +10,10 @@
 
 6. Added LLM assisted gold-generation set for evaluating the RAG system. I chose haiku over Llama for better gold generation. RAGAS addition would be the next steps
 
-7. PDF parser class was updated to only upload clean text chunks to DB for improving RAG system. Tiktoken offers better performance for splitting tokens 
+7. PDF parser class was updated to only upload clean text chunks to DB for improving RAG system. Tiktoken offers better performance for splitting tokens
 
 8. Added LLM as a judge logic for evaluating whether am i getting the right answers, and checked metrics such as answer faithfulness
 
 9. Used Claude Impeccable skills to polish exisiting UI into more accessible and clean UI/UX. Added a evaluation page to reduce the clutter and made upload section drag-and-drop
+
+10. Read the documentation for Connection Pooling, it is not suited for a serverless instances which get turned off after use, hence removed psyopg connection pool setup.

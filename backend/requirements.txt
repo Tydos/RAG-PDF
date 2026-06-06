@@ -5,6 +5,4 @@ pydantic-settings
 psycopg[binary]
 psycopg-pool
 httpx
-huggingface_hub
 tiktoken
-anthropic

@@ -8,8 +8,8 @@
 
 from datetime import datetime, timezone
 
+import psycopg
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
 
 _CREATE_UPLOADS_TABLE = """
 CREATE TABLE IF NOT EXISTS uploads (
@@ -23,17 +23,17 @@ CREATE TABLE IF NOT EXISTS uploads (
 
 
 class UploadStore:
-    def __init__(self, pool: ConnectionPool) -> None:
-        self._pool = pool
+    def __init__(self, conninfo: str) -> None:
+        self._conninfo = conninfo
         self._create_tables()
 
     def _create_tables(self) -> None:
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             conn.execute(_CREATE_UPLOADS_TABLE)
             conn.commit()
 
     def add_upload(self, filename: str, blob_url: str) -> None:
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             conn.execute(
                 """
                 INSERT INTO uploads (filename, blob_url, uploaded_at, status, page_count)
@@ -49,7 +49,7 @@ class UploadStore:
             conn.commit()
 
     def set_status(self, filename: str, status: str, page_count: int = 0) -> None:
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             conn.execute(
                 "UPDATE uploads SET status = %s, page_count = %s WHERE filename = %s",
                 (status, page_count, filename),
@@ -67,7 +67,7 @@ class UploadStore:
             WHERE u.filename LIKE 'advisory::%'
             ORDER BY u.uploaded_at DESC NULLS LAST
         """
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(sql)
                 rows = cur.fetchall()
@@ -90,7 +90,7 @@ class UploadStore:
         return out
 
     def remove_upload(self, filename: str) -> None:
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             cur = conn.execute(
                 "DELETE FROM uploads WHERE filename = %s RETURNING filename", (filename,)
             )
@@ -110,7 +110,7 @@ class UploadStore:
             WHERE u.filename NOT LIKE 'advisory::%'
             ORDER BY u.uploaded_at DESC NULLS LAST
         """
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(sql)
                 rows = cur.fetchall()

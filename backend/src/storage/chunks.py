@@ -10,8 +10,8 @@
 import logging
 import re
 
+import psycopg
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
 
 from src.config import settings
 
@@ -47,12 +47,12 @@ _CREATE_INDEXES = [
 
 
 class ChunkStore:
-    def __init__(self, pool: ConnectionPool) -> None:
-        self._pool = pool
+    def __init__(self, conninfo: str) -> None:
+        self._conninfo = conninfo
         self._create_tables()
 
     def _create_tables(self) -> None:
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             try:
                 conn.execute(_CREATE_VECTOR_EXTENSION)
                 conn.execute(_CREATE_CHUNKS_TABLE)
@@ -94,7 +94,7 @@ class ChunkStore:
             (filename, page, idx, text, self._to_pg_vector(vec))
             for page, idx, text, vec in zip(pages, indexes, texts, vectors)
         ]
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             with conn.cursor() as cur:
                 cur.executemany(
                     "INSERT INTO chunks (filename, page, chunk_index, content, embedding) "
@@ -118,7 +118,7 @@ class ChunkStore:
             (filename, page, idx, text, self._to_pg_vector(vec), adv_id)
             for page, idx, text, vec, adv_id in zip(pages, indexes, texts, vectors, advisory_ids)
         ]
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             with conn.cursor() as cur:
                 cur.executemany(
                     "INSERT INTO chunks (filename, page, chunk_index, content, embedding, source_type, advisory_id) "
@@ -128,7 +128,7 @@ class ChunkStore:
             conn.commit()
 
     def delete_chunks(self, filename: str) -> None:
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             conn.execute("DELETE FROM chunks WHERE filename = %s", (filename,))
             conn.commit()
 
@@ -166,7 +166,7 @@ class ChunkStore:
         sql += "ORDER BY embedding <=> %s::vector LIMIT %s"
         params.extend([vec, k])
 
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             total = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(sql, params)
@@ -198,7 +198,7 @@ class ChunkStore:
         sql += "ORDER BY score DESC LIMIT %s"
         params.append(k)
 
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             total = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(sql, params)
@@ -251,7 +251,7 @@ class ChunkStore:
         """
         params = {"vec": vec, "tsq": tsq, "pool": pool_size, "k": k, "filenames": filenames, "source_type": source_type}
 
-        with self._pool.connection() as conn:
+        with psycopg.connect(self._conninfo) as conn:
             total = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(sql, params)

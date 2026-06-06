@@ -28,6 +28,7 @@ logging.basicConfig(
 
 # --- App startup ---
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.db = DBManager.create()
@@ -44,6 +45,7 @@ router = APIRouter()
 
 
 # --- Dependency helpers ---
+
 
 def get_db(request: Request) -> DatabaseProtocol:
     return request.app.state.db
@@ -66,6 +68,7 @@ def get_advisory_pipeline(request: Request) -> AdvisoryIngestionService:
 
 
 # --- Routes ---
+
 
 @router.get("/")
 def root():
@@ -114,7 +117,7 @@ def list_documents(db: DBManager = Depends(get_db)):
 
 
 @router.post("/query")
-def query(
+async def query(
     req: QueryRequest,
     db: DatabaseProtocol = Depends(get_db),
     embedder: EmbedderProtocol = Depends(get_embedder),
@@ -128,7 +131,7 @@ def query(
 
     try:
         with tracker.measure("embed"):
-            query_vector = embedder.embed([question])[0]
+            query_vector = (await embedder.embed([question]))[0]
     except Exception as e:
         logging.exception("Embedding failed")
         raise HTTPException(status_code=503, detail=f"Embedding service error: {e}")
@@ -146,14 +149,18 @@ def query(
     answer: str | None = None
     try:
         with tracker.measure("llm"):
-            answer = generator.generate(question, chunks, [])
+            answer = await generator.generate(question, chunks, [])
     except Exception:
         logging.exception("Answer generation failed; returning raw chunks")
 
     latency = tracker.all()
     logging.info(
         "query latency — embed: %.0fms | search: %.0fms | llm: %.0fms | total: %.0fms | chunks: %d",
-        latency.get("embed", 0), latency.get("search", 0), latency.get("llm", 0), latency.get("total", 0), len(chunks),
+        latency.get("embed", 0),
+        latency.get("search", 0),
+        latency.get("llm", 0),
+        latency.get("total", 0),
+        len(chunks),
     )
 
     return {
@@ -170,7 +177,7 @@ def get_history(db: DBManager = Depends(get_db)):
 
 
 @router.post("/chat")
-def chat(
+async def chat(
     req: ChatRequest,
     db: DBManager = Depends(get_db),
     embedder: EmbedderProtocol = Depends(get_embedder),
@@ -184,7 +191,7 @@ def chat(
 
     try:
         with tracker.measure("embed"):
-            query_vector = embedder.embed([question])[0]
+            query_vector = (await embedder.embed([question]))[0]
     except Exception as e:
         logging.exception("Embedding failed")
         raise HTTPException(status_code=503, detail=f"Embedding service error: {e}")
@@ -203,7 +210,7 @@ def chat(
     answer: str | None = None
     try:
         with tracker.measure("llm"):
-            answer = generator.generate(question, chunks, history)
+            answer = await generator.generate(question, chunks, history)
     except Exception:
         logging.exception("Answer generation failed; returning raw chunks")
 
@@ -213,7 +220,11 @@ def chat(
     latency = tracker.all()
     logging.info(
         "chat latency — embed: %.0fms | search: %.0fms | llm: %.0fms | total: %.0fms | chunks: %d",
-        latency.get("embed", 0), latency.get("search", 0), latency.get("llm", 0), latency.get("total", 0), len(chunks),
+        latency.get("embed", 0),
+        latency.get("search", 0),
+        latency.get("llm", 0),
+        latency.get("total", 0),
+        len(chunks),
     )
 
     return {
@@ -248,14 +259,20 @@ def eval_summary():
             raw = json.load(f)
         answer_quality = {}
         for mode, questions in raw.items():
-            faith_scores = [q["faithfulness_score"] for q in questions if q.get("faithfulness_score") is not None]
-            rel_scores   = [q["relevance_score"]    for q in questions if q.get("relevance_score")    is not None]
+            faith_scores = [
+                q["faithfulness_score"]
+                for q in questions
+                if q.get("faithfulness_score") is not None
+            ]
+            rel_scores = [
+                q["relevance_score"] for q in questions if q.get("relevance_score") is not None
+            ]
             n = len(faith_scores)
             avg_faith = sum(faith_scores) / n if n else None
-            avg_rel   = sum(rel_scores) / len(rel_scores) if rel_scores else None
+            avg_rel = sum(rel_scores) / len(rel_scores) if rel_scores else None
             answer_quality[mode] = {
-                "avg_faithfulness":  round(avg_faith, 4)       if avg_faith is not None else None,
-                "avg_relevance":     round(avg_rel,   4)       if avg_rel   is not None else None,
+                "avg_faithfulness": round(avg_faith, 4) if avg_faith is not None else None,
+                "avg_relevance": round(avg_rel, 4) if avg_rel is not None else None,
                 "hallucination_rate": round(1 - avg_faith, 4) if avg_faith is not None else None,
                 "n": n,
             }
@@ -284,6 +301,7 @@ def list_packages(db: DBManager = Depends(get_db)):
 def delete_package(name: str, ecosystem: str = "PyPI", db: DBManager = Depends(get_db)):
     """Remove all advisory chunks for a package."""
     from src.advisories.ingestion import advisory_filename
+
     filename = advisory_filename(name, ecosystem)
     try:
         db.remove_upload(filename)

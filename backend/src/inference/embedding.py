@@ -1,5 +1,9 @@
+import asyncio
+
 import httpx
+
 from src.config import settings
+
 
 class HuggingFaceEmbeddingService:
     def __init__(self) -> None:
@@ -7,13 +11,15 @@ class HuggingFaceEmbeddingService:
             f"https://router.huggingface.co/hf-inference/models/"
             f"{settings.hf_embed_model}/pipeline/feature-extraction"
         )
-
-    def _fetch_embeddings(self, texts: list[str]) -> list[list[float]]:
-        response = httpx.post(
-            self._url,
+        self._client = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {settings.hf_token}"},
-            json={"inputs": texts, "options": {"wait_for_model": True}},
             timeout=settings.hf_embed_timeout,
+        )
+
+    async def _fetch_embeddings(self, texts: list[str]) -> list[list[float]]:
+        response = await self._client.post(
+            self._url,
+            json={"inputs": texts, "options": {"wait_for_model": True}},
         )
         response.raise_for_status()
         data = response.json()
@@ -21,13 +27,12 @@ class HuggingFaceEmbeddingService:
             data = [data]
         return data
 
-    def embed(self, texts: list[str], batch_size: int | None = None) -> list[list[float]]:
+    async def embed(self, texts: list[str], batch_size: int | None = None) -> list[list[float]]:
         if not texts:
             return []
         if not settings.hf_token:
             raise RuntimeError("HF_TOKEN is not configured.")
         size = batch_size or settings.hf_embed_batch_size
-        results: list[list[float]] = []
-        for i in range(0, len(texts), size):
-            results.extend(self._fetch_embeddings(texts[i : i + size]))
-        return results
+        batches = [texts[i : i + size] for i in range(0, len(texts), size)]
+        results = await asyncio.gather(*[self._fetch_embeddings(batch) for batch in batches])
+        return [vec for batch in results for vec in batch]

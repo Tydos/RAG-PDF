@@ -28,11 +28,11 @@ class DatabaseProtocol(Protocol):
 
 
 class EmbedderProtocol(Protocol):
-    def embed(self, texts: list[str], batch_size: int | None = None) -> list[list[float]]: ...
+    async def embed(self, texts: list[str], batch_size: int | None = None) -> list[list[float]]: ...
 
 
 class GeneratorProtocol(Protocol):
-    def generate(self, question: str, chunks: list[dict], history: list[dict]) -> str: ...
+    async def generate(self, question: str, chunks: list[dict], history: list[dict]) -> str: ...
 
 
 class ExtractorProtocol(Protocol):
