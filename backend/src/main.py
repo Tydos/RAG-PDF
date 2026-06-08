@@ -7,7 +7,6 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, File, Request, UploadFile
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
-from src.config import settings
 from src.interfaces import DatabaseProtocol, EmbedderProtocol, GeneratorProtocol
 from src.schemas import ChatRequest, IngestRequest, QueryRequest
 from src.inference.rag_generator import create_rag_generator
