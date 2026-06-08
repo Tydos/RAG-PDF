@@ -1,10 +1,10 @@
 """
-    ChunkStore manages the 'chunks' table, which stores text chunks and their vector embeddings on PostgreSQL.
-    to_pg_vector converts a list of floats to the PostgreSQL vector literal format.
-    to_tsquery converts a query string into a tsquery format for full-text search.
-    save_chunks inserts multiple chunks into the database.
-    delete_chunks removes all chunks associated with a filename.
-    search_chunks performs a search based on the specified mode (semantic, keyword, hybrid) and returns matching chunks with their scores.
+ChunkStore manages the 'chunks' table, which stores text chunks and their vector embeddings on PostgreSQL.
+to_pg_vector converts a list of floats to the PostgreSQL vector literal format.
+to_tsquery converts a query string into a tsquery format for full-text search.
+save_chunks inserts multiple chunks into the database.
+delete_chunks removes all chunks associated with a filename.
+search_chunks performs a search based on the specified mode (semantic, keyword, hybrid) and returns matching chunks with their scores.
 """
 
 import logging
@@ -13,32 +13,12 @@ import re
 import psycopg
 from psycopg.rows import dict_row
 
-from src.config import settings
-
-_CREATE_VECTOR_EXTENSION = "CREATE EXTENSION IF NOT EXISTS vector;"
-
-_CREATE_CHUNKS_TABLE = f"""
-CREATE TABLE IF NOT EXISTS chunks (
-    id BIGSERIAL PRIMARY KEY,
-    filename TEXT NOT NULL REFERENCES uploads(filename) ON DELETE CASCADE,
-    page INTEGER NOT NULL,
-    chunk_index INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    embedding vector({settings.embed_dim}) NOT NULL
-);
-"""
-
-_ADD_TSVECTOR_COLUMN = """
-ALTER TABLE chunks
-  ADD COLUMN IF NOT EXISTS content_tsv tsvector
-  GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
-"""
-
-_CREATE_INDEXES = [
-    "CREATE INDEX IF NOT EXISTS chunks_filename_idx ON chunks(filename);",
-    "CREATE INDEX IF NOT EXISTS chunks_embedding_idx ON chunks USING ivfflat (embedding vector_cosine_ops);",
-    "CREATE INDEX IF NOT EXISTS chunks_tsv_idx ON chunks USING GIN (content_tsv);",
-]
+from backend.src.storage.table_definitions import (
+    _ADD_TSVECTOR_COLUMN,
+    _CREATE_CHUNKS_TABLE,
+    _CREATE_INDEXES,
+    _CREATE_VECTOR_EXTENSION,
+)
 
 
 class ChunkStore:
@@ -135,10 +115,17 @@ class ChunkStore:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
 
-        logging.info("search(semantic): %d/%d chunks (filter=%s, k=%d)", len(rows), total, filenames, k)
+        logging.info(
+            "search(semantic): %d/%d chunks (filter=%s, k=%d)", len(rows), total, filenames, k
+        )
         return [
-            {"filename": r["filename"], "page": int(r["page"]), "chunk_index": int(r["chunk_index"]),
-             "content": r["content"], "score": float(r["score"])}
+            {
+                "filename": r["filename"],
+                "page": int(r["page"]),
+                "chunk_index": int(r["chunk_index"]),
+                "content": r["content"],
+                "score": float(r["score"]),
+            }
             for r in rows
         ]
 
@@ -164,14 +151,28 @@ class ChunkStore:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
 
-        logging.info("search(keyword): %d/%d chunks (filter=%s, k=%d, tsq=%r)", len(rows), total, filenames, k, tsq)
+        logging.info(
+            "search(keyword): %d/%d chunks (filter=%s, k=%d, tsq=%r)",
+            len(rows),
+            total,
+            filenames,
+            k,
+            tsq,
+        )
         return [
-            {"filename": r["filename"], "page": int(r["page"]), "chunk_index": int(r["chunk_index"]),
-             "content": r["content"], "score": float(r["score"])}
+            {
+                "filename": r["filename"],
+                "page": int(r["page"]),
+                "chunk_index": int(r["chunk_index"]),
+                "content": r["content"],
+                "score": float(r["score"]),
+            }
             for r in rows
         ]
 
-    def _search_hybrid(self, vec: str, query_text: str, k: int, filenames: list[str] | None) -> list[dict]:
+    def _search_hybrid(
+        self, vec: str, query_text: str, k: int, filenames: list[str] | None
+    ) -> list[dict]:
         tsq = self._to_tsquery(query_text)
         pool_size = k * 4
 
@@ -215,9 +216,21 @@ class ChunkStore:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
 
-        logging.info("search(hybrid): %d/%d chunks (filter=%s, k=%d, tsq=%r)", len(rows), total, filenames, k, tsq)
+        logging.info(
+            "search(hybrid): %d/%d chunks (filter=%s, k=%d, tsq=%r)",
+            len(rows),
+            total,
+            filenames,
+            k,
+            tsq,
+        )
         return [
-            {"filename": r["filename"], "page": int(r["page"]), "chunk_index": int(r["chunk_index"]),
-             "content": r["content"], "score": float(r["score"])}
+            {
+                "filename": r["filename"],
+                "page": int(r["page"]),
+                "chunk_index": int(r["chunk_index"]),
+                "content": r["content"],
+                "score": float(r["score"]),
+            }
             for r in rows
         ]

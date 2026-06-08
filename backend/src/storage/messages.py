@@ -1,9 +1,9 @@
 """
-    MessageStore manages the 'messages' table, which stores user and assistant messages along with their associated chunks.
-    add_message inserts a new message into the database, optionally with associated chunks.
-    get_messages retrieves messages from the database, returning them in chronological order with their content and associated chunks.
-    
-    future work: update/delete messages, pagination, filtering by role/date, etc.
+MessageStore manages the 'messages' table, which stores user and assistant messages along with their associated chunks.
+add_message inserts a new message into the database, optionally with associated chunks.
+get_messages retrieves messages from the database, returning them in chronological order with their content and associated chunks.
+
+future work: update/delete messages, pagination, filtering by role/date, etc.
 """
 
 import json
@@ -11,15 +11,7 @@ import json
 import psycopg
 from psycopg.rows import dict_row
 
-_CREATE_MESSAGES_TABLE = """
-CREATE TABLE IF NOT EXISTS messages (
-    id BIGSERIAL PRIMARY KEY,
-    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-    content TEXT NOT NULL,
-    chunks JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-"""
+from backend.src.storage.table_definitions import _CREATE_MESSAGES_TABLE
 
 
 class MessageStore:

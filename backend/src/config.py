@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     query_top_k_max: int = 20
 
-    supabase_url: str = "https://zzukjhligshxrdbpcsjz.supabase.co"
+    supabase_url: str = ""
     supabase_service_key: str = ""
     supabase_bucket: str = "files"
 

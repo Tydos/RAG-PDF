@@ -1,9 +1,9 @@
 """
-    UploadStore manages the 'uploads' table, which tracks uploaded PDF files and their processing status.
-    add_upload inserts a new upload record or updates an existing one with the given filename and blob
-    set_status updates the processing status and page count for a given filename.
-    remove_upload deletes an upload record by filename.
-    list_uploads retrieves all upload records, including their associated chunk counts, and returns them in chronological order.
+UploadStore manages the 'uploads' table, which tracks uploaded PDF files and their processing status.
+add_upload inserts a new upload record or updates an existing one with the given filename and blob
+set_status updates the processing status and page count for a given filename.
+remove_upload deletes an upload record by filename.
+list_uploads retrieves all upload records, including their associated chunk counts, and returns them in chronological order.
 """
 
 from datetime import datetime, timezone
@@ -11,15 +11,7 @@ from datetime import datetime, timezone
 import psycopg
 from psycopg.rows import dict_row
 
-_CREATE_UPLOADS_TABLE = """
-CREATE TABLE IF NOT EXISTS uploads (
-    filename TEXT PRIMARY KEY,
-    blob_url TEXT NOT NULL DEFAULT '',
-    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    status TEXT NOT NULL DEFAULT 'pending',
-    page_count INTEGER NOT NULL DEFAULT 0
-);
-"""
+from backend.src.storage.table_definitions import _CREATE_UPLOADS_TABLE
 
 
 class UploadStore:
