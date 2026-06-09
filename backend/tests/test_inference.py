@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from src.inference.embeddings import HuggingFaceEmbeddingService
 from src.inference.rag_generator import LLMResponseGenerator
 from src.inference.prompt_builder import PromptBuilder
-from src.inference.llm_adapters import ClaudeAdapter, HuggingFaceAdapter
+from src.inference.llm_adapters import ClaudeAdapter, HuggingFaceAdapter, LLMAuthError
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +174,7 @@ class TestHuggingFaceAdapter:
 
     def _mock_response(self, content: str) -> MagicMock:
         mock = MagicMock()
+        mock.status_code = 200
         mock.raise_for_status = MagicMock()
         mock.json.return_value = {"choices": [{"message": {"content": content}}]}
         return mock
@@ -205,6 +206,15 @@ class TestHuggingFaceAdapter:
             result = await adapter.generate([], 100, 0.2)
         assert result == "trimmed"
 
+    @pytest.mark.asyncio
+    async def test_raises_auth_error_on_401(self):
+        adapter = self._make_adapter()
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        with patch.object(adapter._client, "post", new=AsyncMock(return_value=mock_response)):
+            with pytest.raises(LLMAuthError, match="invalid or unauthorized"):
+                await adapter.generate([{"role": "user", "content": "q"}], 100, 0.2)
+
 
 # ===========================================================================
 # ClaudeAdapter
@@ -217,6 +227,7 @@ class TestClaudeAdapter:
 
     def _mock_response(self, text: str) -> MagicMock:
         mock = MagicMock()
+        mock.status_code = 200
         mock.raise_for_status = MagicMock()
         mock.json.return_value = {"content": [{"text": text}]}
         return mock
@@ -251,11 +262,21 @@ class TestClaudeAdapter:
     async def test_returns_empty_string_on_empty_content(self):
         adapter = self._make_adapter()
         mock_response = MagicMock()
+        mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {"content": []}
         with patch.object(adapter._client, "post", new=AsyncMock(return_value=mock_response)):
             result = await adapter.generate([{"role": "user", "content": "q"}], 100, 0.2)
         assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_raises_auth_error_on_401(self):
+        adapter = self._make_adapter()
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        with patch.object(adapter._client, "post", new=AsyncMock(return_value=mock_response)):
+            with pytest.raises(LLMAuthError, match="invalid or unauthorized"):
+                await adapter.generate([{"role": "user", "content": "q"}], 100, 0.2)
 
     @pytest.mark.asyncio
     async def test_strips_whitespace_from_response(self):
@@ -304,6 +325,14 @@ class TestLLMResponseGenerator:
         gen = LLMResponseGenerator(llm=mock_llm, max_tokens=200, temperature=0.2)
         result = await gen.generate("q", SAMPLE_CHUNKS, [])
         assert "couldn't find" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_propagates_auth_error(self):
+        mock_llm = MagicMock()
+        mock_llm.generate = AsyncMock(side_effect=LLMAuthError("LLM API key is invalid or unauthorized"))
+        gen = LLMResponseGenerator(llm=mock_llm, max_tokens=200, temperature=0.2)
+        with pytest.raises(LLMAuthError, match="invalid or unauthorized"):
+            await gen.generate("q", SAMPLE_CHUNKS, [])
 
     @pytest.mark.asyncio
     async def test_returns_fallback_on_empty_llm_response(self):

@@ -74,7 +74,7 @@ export default function ChatSection({ messages, setMessages }) {
             <div className="msg-bubble">{msg.content}</div>
             {msg.role === 'assistant' && msg.chunks?.length > 0 && (
               <div className="msg-sources" aria-label="Sources">
-                {msg.chunks.map((c, j) => {
+                {msg.chunks.slice(0, 3).map((c, j) => {
                   const href = hrefFor(c);
                   const label = `${c.filename} p.${c.page}`;
                   return href ? (

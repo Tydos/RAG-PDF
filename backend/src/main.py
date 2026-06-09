@@ -1,11 +1,13 @@
 import json
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, File, Request, UploadFile
 from fastapi.exceptions import HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from src.interfaces import DatabaseProtocol, EmbedderProtocol, GeneratorProtocol
 from src.schemas import ChatRequest, IngestRequest, QueryRequest
@@ -15,6 +17,7 @@ from src.storage.database import DBManager
 from src.ingestion.service import IngestionService
 from src.ingestion.pdf_parser import PDFParser
 from src.ingestion.supabase_storage import upload_to_supabase
+from src.inference.llm_adapters import LLMAuthError
 from src.utils.latency import LatencyTracker
 
 logging.basicConfig(
@@ -37,6 +40,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Antares API", lifespan=lifespan)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS").split(",") if o.strip()],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 router = APIRouter()
 
 
@@ -150,6 +163,8 @@ async def query(
     try:
         with tracker.measure("llm"):
             answer = await generator.generate(question, chunks, [])
+    except LLMAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
     except Exception:
         logging.exception("Answer generation failed; returning raw chunks")
 
@@ -211,6 +226,8 @@ async def chat(
     try:
         with tracker.measure("llm"):
             answer = await generator.generate(question, chunks, history)
+    except LLMAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
     except Exception:
         logging.exception("Answer generation failed; returning raw chunks")
 

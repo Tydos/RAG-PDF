@@ -9,7 +9,6 @@ dependencies = [
     "pydantic-settings",
     "psycopg[binary]",
     "httpx",
-    "tiktoken",
     "pyyaml>=6.0.3",
     "python-multipart>=0.0.32",
 ]

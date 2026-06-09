@@ -1,4 +1,4 @@
-import { supabase, BUCKET, SUPABASE_URL } from '../lib/supabase';
+import { supabase, BUCKET, SUPABASE_URL } from './supabase';
 
 const API = process.env.REACT_APP_API_PREFIX || '';
 

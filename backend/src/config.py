@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     hf_embed_batch_size: int = 32
     hf_embed_timeout: int = 60
 
-    hf_llm_model: str = "meta-llama/Llama-3.2-1B-Instruct:novita"
+    hf_llm_model: str = "meta-llama/Llama-3.2-1B-Instruct:featherless-ai"
     hf_llm_max_tokens: int = 400
 
     claude_token: str = ""

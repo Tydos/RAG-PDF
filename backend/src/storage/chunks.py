@@ -13,7 +13,7 @@ import re
 import psycopg
 from psycopg.rows import dict_row
 
-from backend.src.storage.table_definitions import (
+from src.storage.table_definitions import (
     _ADD_TSVECTOR_COLUMN,
     _CREATE_CHUNKS_TABLE,
     _CREATE_INDEXES,

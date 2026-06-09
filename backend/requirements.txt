@@ -5,4 +5,5 @@ pydantic-settings
 psycopg[binary]
 psycopg-pool
 httpx
-tiktoken
+python-multipart
+python-dotenv

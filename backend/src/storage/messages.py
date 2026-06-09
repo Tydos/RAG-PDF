@@ -11,7 +11,7 @@ import json
 import psycopg
 from psycopg.rows import dict_row
 
-from backend.src.storage.table_definitions import _CREATE_MESSAGES_TABLE
+from src.storage.table_definitions import _CREATE_MESSAGES_TABLE
 
 
 class MessageStore:

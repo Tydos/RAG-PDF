@@ -5,10 +5,11 @@ Run: pytest backend/tests/test_api.py -v
 """
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from src.main import app
 from src.main import get_db, get_embedder, get_generator
+from src.inference.llm_adapters import LLMAuthError
 
 
 # ── Shared mocks ─────────────────────────────────────────────────────────────
@@ -164,6 +165,26 @@ def test_chat_embedding_failure(client, mock_embedder):
     mock_embedder.embed.side_effect = RuntimeError("embed service down")
     r = client.post("/chat", json={"question": "test"})
     assert r.status_code == 503
+
+
+def test_chat_llm_auth_failure(client, mock_generator):
+    mock_generator.generate = AsyncMock(side_effect=LLMAuthError("LLM API key is invalid or unauthorized"))
+    r = client.post("/chat", json={"question": "test"})
+    assert r.status_code == 401
+    assert r.json()["detail"] == "LLM API key is invalid or unauthorized"
+
+
+def test_query_llm_auth_failure(client, mock_generator):
+    mock_generator.generate = AsyncMock(side_effect=LLMAuthError("LLM API key is invalid or unauthorized"))
+    r = client.post("/query", json={"question": "test"})
+    assert r.status_code == 401
+    assert r.json()["detail"] == "LLM API key is invalid or unauthorized"
+
+
+def test_chat_llm_auth_failure_does_not_save_messages(client, mock_db, mock_generator):
+    mock_generator.generate = AsyncMock(side_effect=LLMAuthError("LLM API key is invalid or unauthorized"))
+    client.post("/chat", json={"question": "test"})
+    mock_db.add_message.assert_not_called()
 
 
 def test_chat_uses_history(client, mock_db, mock_generator):

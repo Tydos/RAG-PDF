@@ -1,7 +1,7 @@
 import logging
 
 from src.config import settings
-from src.inference.llm_adapters import ClaudeAdapter, LLMAdapter
+from src.inference.llm_adapters import ClaudeAdapter, LLMAdapter, LLMAuthError
 from src.inference.prompt_builder import PromptBuilder
 
 _NO_CONTEXT_ANSWER = "I couldn't find anything relevant in the indexed documents."
@@ -25,6 +25,8 @@ class LLMResponseGenerator:
                 max_tokens=self._max_tokens,
                 temperature=self._temperature,
             )
+        except LLMAuthError:
+            raise
         except Exception:
             logging.exception("LLM inference failed")
             return _NO_CONTEXT_ANSWER
@@ -41,6 +43,7 @@ def create_rag_generator() -> LLMResponseGenerator:
         max_tokens = settings.claude_max_tokens
         logging.info("Using Claude adapter (model: %s)", settings.claude_model)
     else:
+        # I ran out of Claude credits
         from src.inference.llm_adapters import HuggingFaceAdapter
 
         llm = HuggingFaceAdapter(model=settings.hf_llm_model, token=settings.hf_token)

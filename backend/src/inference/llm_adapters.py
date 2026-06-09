@@ -6,6 +6,15 @@ import httpx
 from src.config import settings
 
 
+class LLMAuthError(Exception):
+    """Raised when the LLM provider rejects the API key."""
+
+
+def _check_response_auth(response: httpx.Response) -> None:
+    if response.status_code in (401, 403):
+        raise LLMAuthError("LLM API key is invalid or unauthorized")
+
+
 class LLMAdapter(ABC):
     @abstractmethod
     async def generate(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
@@ -43,6 +52,7 @@ class ClaudeAdapter(LLMAdapter):
             payload["system"] = system
 
         response = await self._client.post(settings.claude_api_url, json=payload)
+        _check_response_auth(response)
         response.raise_for_status()
         data = response.json()
         content = data.get("content", [])
@@ -68,5 +78,6 @@ class HuggingFaceAdapter(LLMAdapter):
                 "temperature": temperature,
             },
         )
+        _check_response_auth(response)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"].strip()

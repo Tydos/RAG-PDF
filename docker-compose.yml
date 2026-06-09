@@ -1,18 +1,12 @@
 services:
-  fastapi:
+  backend:
     build: ./backend
-    env_file: .env
+    env_file: ./backend/.env
     ports:
       - "8000:8000"
 
   frontend:
     build: ./frontend
+    env_file: ./frontend/.env.local
     ports:
       - "3000:3000"
-    environment:
-      - CHOKIDAR_USEPOLLING=true
-      - CI=false
-    volumes:
-      - ./frontend/src:/app/src
-    depends_on:
-      - fastapi

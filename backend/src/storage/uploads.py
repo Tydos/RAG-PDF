@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import psycopg
 from psycopg.rows import dict_row
 
-from backend.src.storage.table_definitions import _CREATE_UPLOADS_TABLE
+from src.storage.table_definitions import _CREATE_UPLOADS_TABLE
 
 
 class UploadStore:

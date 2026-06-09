@@ -1,4 +1,4 @@
-from backend.src.config import settings
+from src.config import settings
 
 
 _CREATE_MESSAGES_TABLE = """
