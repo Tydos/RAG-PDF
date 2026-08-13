@@ -1,0 +1,35 @@
+[project]
+name = "antares"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "jinja2",
+    "pypdf",
+    "pydantic-settings",
+    "psycopg[binary]",
+    "httpx",
+    "minio",
+    "pyyaml>=6.0.3",
+    "python-multipart>=0.0.32",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "ruff",
+    "python-dotenv",
+    "tqdm",
+    "anthropic",
+    "requests",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "strict"
+
+[tool.ruff]
+line-length = 100

@@ -1,12 +1,64 @@
 services:
-  backend:
-    build: ./backend
-    env_file: ./backend/.env
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: antares
+      POSTGRES_PASSWORD: antares
+      POSTGRES_DB: antares
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U antares -d antares"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin 2>/dev/null; do sleep 1; done;
+      mc mb -p local/files || true;
+      mc anonymous set download local/files;
+      echo 'MinIO bucket files ready';
+      "
+
+  app:
+    build: .
+    env_file: ./.env
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://antares:antares@postgres:5432/antares
+      STORAGE_BACKEND: s3
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_URL: http://localhost:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: files
 
-  frontend:
-    build: ./frontend
-    env_file: ./frontend/.env.local
-    ports:
-      - "3000:3000"
+volumes:
+  pgdata:
+  minio_data:

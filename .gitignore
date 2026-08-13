@@ -229,5 +229,5 @@ __marimo__/
 CLAUDE.md
 
 # Evaluation artifacts
-backend/tests/retriever-evaluation/gold_set.json
-backend/tests/retriever-evaluation/results.json
+tests/retriever-evaluation/gold_set.json
+tests/retriever-evaluation/results.json

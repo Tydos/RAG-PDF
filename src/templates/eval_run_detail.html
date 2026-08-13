@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "partials/eval_results.html" import pct %}
+
+{% block title %}Antares — Eval Run #{{ run.id }}{% endblock %}
+
+{% block content %}
+<main class="eval-dashboard">
+  <header class="eval-header">
+    <div>
+      <h1>Evaluation Run #{{ run.id }}</h1>
+      <p class="eval-subtitle">{{ run.created_at }}</p>
+    </div>
+    <p><a href="/eval">← Back to evaluation dashboard</a></p>
+  </header>
+
+  <section class="eval-section">
+    <h2 class="eval-section-title">Configuration</h2>
+    <p class="eval-note">
+      Questions: <strong>{{ run.config.question_count or "—" }}</strong>
+      · Top-k: <strong>{{ run.config.top_k or "—" }}</strong>
+      · LLM: <strong>{{ run.config.llm or "auto" }}</strong>
+      · Rerank: <strong>{{ "on" if run.config.rerank_enabled else "off" }}</strong>
+      {% if run.config.gold_set_hash %}
+      · Gold hash: <code>{{ run.config.gold_set_hash }}</code>
+      {% endif %}
+    </p>
+  </section>
+
+  {% set retrieval = run.retrieval_results or {} %}
+  {% if retrieval %}
+  <section class="eval-section">
+    <h2 class="eval-section-title">Retrieval Accuracy</h2>
+    <table class="eval-table">
+      <thead>
+        <tr>
+          <th>Mode</th>
+          <th>Precision@k</th>
+          <th>Recall@k</th>
+          <th>F1</th>
+          <th>Ctx Precision</th>
+          <th>Ctx Recall</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for label, row in retrieval.items() %}
+        <tr>
+          <td class="eval-mode-cell">{{ label }}</td>
+          <td>{{ pct(row.precision) }}</td>
+          <td>{{ pct(row.recall) }}</td>
+          <td>{{ pct(row.f1) }}</td>
+          <td>{{ pct(row.context_precision) }}</td>
+          <td>{{ pct(row.context_recall) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% set aq = run.answer_quality_results %}
+  {% if aq and aq.summary %}
+  <section class="eval-section">
+    <h2 class="eval-section-title">Answer Quality</h2>
+    <div class="eval-cards">
+      {% for mode, summary in aq.summary.items() %}
+      <article class="eval-card">
+        <div class="eval-card-mode">{{ mode }}</div>
+        <div class="eval-card-metrics">
+          <div class="eval-metric">
+            <span class="eval-metric-val">{{ pct(summary.faithfulness) if summary.faithfulness is not none else "—" }}</span>
+            <span class="eval-metric-label">Faithfulness</span>
+          </div>
+          <div class="eval-metric">
+            <span class="eval-metric-val">{{ pct(summary.relevance) if summary.relevance is not none else "—" }}</span>
+            <span class="eval-metric-label">Relevance</span>
+          </div>
+          <div class="eval-metric">
+            <span class="eval-metric-val">{{ pct(summary.hallucination_rate) if summary.hallucination_rate is not none else "—" }}</span>
+            <span class="eval-metric-label">Hallucination</span>
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}

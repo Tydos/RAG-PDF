@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Antares — RAG Evaluation{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+  <div class="app-root">
+    <nav class="navbar" aria-label="Main navigation">
+      <span class="navbar-brand">Antares</span>
+      <div class="navbar-links">
+        <a href="/" class="navbar-link{% if request.url.path == '/' %} active{% endif %}">Chat</a>
+        <a href="/eval" class="navbar-link{% if request.url.path.startswith('/eval') %} active{% endif %}">Evaluation</a>
+      </div>
+    </nav>
+    <div class="app-body">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

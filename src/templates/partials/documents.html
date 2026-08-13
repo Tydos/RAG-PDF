@@ -1,0 +1,32 @@
+<p class="kb-label">Knowledge Base</p>
+{% if documents %}
+<ul class="kb-list" aria-label="Uploaded documents">
+  {% for doc in documents %}
+  <li class="kb-item">
+    <span class="kb-icon" aria-hidden="true">📄</span>
+    <span class="kb-name" title="{{ doc.filename }}">{{ doc.filename }}</span>
+    <span class="kb-meta">
+      {% if doc.status and doc.status != 'indexed' %}
+      <span class="kb-status kb-status-{{ doc.status }}">
+        {%- if doc.status == 'pending' -%}Indexing
+        {%- elif doc.status == 'failed' -%}Failed
+        {%- elif doc.status == 'skipped' -%}No text
+        {%- else -%}{{ doc.status }}
+        {%- endif -%}
+      </span>
+      {% endif %}
+      <button
+        class="kb-delete"
+        hx-delete="/files/{{ doc.filename | urlencode }}"
+        hx-target="#documents"
+        hx-swap="innerHTML"
+        hx-confirm="Delete {{ doc.filename }}?"
+        aria-label="Delete {{ doc.filename }}"
+      >✕</button>
+    </span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="kb-empty">No documents yet.</p>
+{% endif %}

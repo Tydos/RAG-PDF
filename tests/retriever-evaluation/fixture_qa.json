@@ -1,0 +1,20 @@
+[
+  {
+    "question": "What color is the transformer attention mechanism?",
+    "ground_truth": "The attention mechanism uses scaled dot-product attention.",
+    "ground_truth_contexts": [
+      "The Transformer uses scaled dot-product attention for all encoder and decoder layers."
+    ],
+    "source_pdf": "fixture.pdf",
+    "page": 1
+  },
+  {
+    "question": "How many layers does the baseline model use?",
+    "ground_truth": "The baseline model uses six identical layers.",
+    "ground_truth_contexts": [
+      "We use six identical layers in the baseline encoder and decoder stacks."
+    ],
+    "source_pdf": "fixture.pdf",
+    "page": 2
+  }
+]

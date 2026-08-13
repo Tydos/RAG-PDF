@@ -1,8 +1,0 @@
--r requirements.txt
-pytest
-pytest-asyncio
-pytest-cov
-ruff
-python-dotenv
-tqdm
-anthropic>=0.40.0

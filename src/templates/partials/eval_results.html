@@ -1,0 +1,112 @@
+{% macro metric_class(value, good=0.75, warn=0.5) -%}
+  {%- if value is none -%}{%- elif value >= good -%}score-good{%- elif value >= warn -%}score-warn{%- else -%}score-bad{%- endif -%}
+{%- endmacro %}
+
+{% macro pct(value) -%}
+  {%- if value is none -%}—{%- else -%}{{ "%.1f"|format(value * 100) }}%{%- endif -%}
+{%- endmacro %}
+
+<section class="eval-section">
+  <h2 class="eval-section-title">Gold Set</h2>
+  {% if gold_set_generation %}
+  <p class="eval-note">
+    Generated <strong>{{ gold_set_generation.generated }}</strong> new question(s)
+    {% if gold_set_generation.skipped %}({{ gold_set_generation.skipped }} skipped){% endif %}
+    with <strong>{{ judge_model }}</strong> ·
+    total <strong>{{ gold_set_generation.total }}</strong> in <code>{{ gold_set_generation.path }}</code>
+  </p>
+  {% endif %}
+  {% if gold_set.exists and gold_set.count > 0 %}
+  <p class="eval-note">
+  <strong>{{ gold_set.count }}</strong> questions in <code>{{ gold_set.path }}</code>
+  {% if gold_set.hash %} · hash <code>{{ gold_set.hash }}</code>{% endif %}
+  </p>
+  {% else %}
+  <p class="eval-empty">
+    No gold set found. Generate one with
+    <code>python tests/retriever-evaluation/generate_gold_set.py</code>
+  </p>
+  {% endif %}
+</section>
+
+{% if latest_run %}
+<section class="eval-section">
+  <h2 class="eval-section-title">Latest Run #{{ latest_run.id }}</h2>
+  <p class="eval-note">
+    {{ latest_run.created_at }}
+    {% if latest_run.config.gold_set_hash %}
+    · gold hash <code>{{ latest_run.config.gold_set_hash }}</code>
+    {% endif %}
+    {% if latest_run.config.llm %}
+    · LLM <strong>{{ latest_run.config.llm }}</strong>
+    {% endif %}
+  </p>
+
+  {% set retrieval = latest_run.retrieval_results or {} %}
+  {% if retrieval %}
+  <table class="eval-table" aria-label="Retrieval accuracy by search mode">
+    <thead>
+      <tr>
+        <th>Mode</th>
+        <th>Precision@k</th>
+        <th>Recall@k</th>
+        <th>F1</th>
+        <th>Ctx Precision</th>
+        <th>Ctx Recall</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set best_precision = retrieval.values() | map(attribute='precision') | max %}
+      {% set best_recall = retrieval.values() | map(attribute='recall') | max %}
+      {% set best_f1 = retrieval.values() | map(attribute='f1') | max %}
+      {% for label, row in retrieval.items() %}
+      <tr>
+        <td class="eval-mode-cell">{{ label }}</td>
+        <td class="{% if row.precision == best_precision %}eval-best{% endif %}">{{ pct(row.precision) }}</td>
+        <td class="{% if row.recall == best_recall %}eval-best{% endif %}">{{ pct(row.recall) }}</td>
+        <td class="{% if row.f1 == best_f1 %}eval-best{% endif %}">{{ pct(row.f1) }}</td>
+        <td>{{ pct(row.context_precision) }}</td>
+        <td>{{ pct(row.context_recall) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% set aq = latest_run.answer_quality_results %}
+  {% if aq and aq.summary %}
+  <h3 class="eval-section-title" style="margin-top: 20px;">Answer Quality</h3>
+  <div class="eval-cards">
+    {% for mode, summary in aq.summary.items() %}
+    <article class="eval-card">
+      <div class="eval-card-mode">{{ mode }}</div>
+      <div class="eval-card-metrics">
+        <div class="eval-metric">
+          <span class="eval-metric-val {{ metric_class(summary.faithfulness) }}">{{ pct(summary.faithfulness) if summary.faithfulness is not none else "—" }}</span>
+          <span class="eval-metric-label">Faithfulness</span>
+        </div>
+        <div class="eval-metric">
+          <span class="eval-metric-val {{ metric_class(summary.relevance) }}">{{ pct(summary.relevance) if summary.relevance is not none else "—" }}</span>
+          <span class="eval-metric-label">Relevance</span>
+        </div>
+        <div class="eval-metric">
+          <span class="eval-metric-val {{ metric_class(1 - (summary.hallucination_rate or 0), good=0.75, warn=0.5) }}">{{ pct(summary.hallucination_rate) if summary.hallucination_rate is not none else "—" }}</span>
+          <span class="eval-metric-label">Hallucination</span>
+        </div>
+        <div class="eval-metric">
+          <span class="eval-metric-val">{{ summary.sample_count or 0 }}</span>
+          <span class="eval-metric-label">Scored</span>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% elif latest_run.config.include_answer_quality and not judge_available %}
+  <p class="eval-note">Answer-quality scoring requires <code>HF_TOKEN</code> for the judge model.</p>
+  {% endif %}
+</section>
+{% else %}
+<section class="eval-section">
+  <p class="eval-empty">No evaluation runs yet. Run an evaluation to compare retrieval modes.</p>
+</section>
+{% endif %}

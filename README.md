@@ -1,98 +1,136 @@
 # Antares
 
-Upload PDFs, ask questions. Hybrid search (semantic + keyword, RRF-fused) + LLM answers with inline citations and persistent chat history.
+A measurable RAG retrieval evaluation platform. Upload PDFs, index them into PostgreSQL + pgvector, then benchmark hybrid search, reranking, and answer quality on your own corpus.
 
-**Live → https://rag-pdf-fawn.vercel.app/**
+**Live → [https://rag-pdf-fawn.vercel.app/](https://rag-pdf-fawn.vercel.app/)**
 
-![chat page](docs/chatpage.png)
+## What it measures
 
-![eval page](docs/evalpage.png)
+- **Retrieval quality** — precision@k, recall@k, and F1 across `hybrid`, `semantic`, and `keyword` modes, with and without cross-encoder reranking
+- **Answer quality** — faithfulness, relevance, and hallucination rate via HF Llama 3.3 70B judge (optional)
+- **Latency** — per-stage timing for embed, search, rerank, and LLM
+
+Use the **Chat** view for interactive queries with citations. Use the **Evaluation** dashboard to run gold-set benchmarks and compare retrieval strategies.
 
 ## Stack
 
-| | |
-|---|---|
-| Frontend | React 18 |
-| Backend | FastAPI + Python 3.11 |
-| Database | PostgreSQL + pgvector + tsvector (Supabase) |
-| Embeddings | HuggingFace — `all-MiniLM-L6-v2` (384-dim) |
-| LLM | HuggingFace — `meta-llama/Llama-3.2-1B-Instruct` or Claude |
-| Storage | Supabase Storage |
+
+|            |                                                      |
+| ---------- | ---------------------------------------------------- |
+| App        | FastAPI + Jinja2 + HTMX                              |
+| Database   | PostgreSQL + pgvector + tsvector                     |
+| Embeddings | HuggingFace — `all-MiniLM-L6-v2` (384-dim)           |
+| Reranker   | HuggingFace — `cross-encoder/ms-marco-MiniLM-L-6-v2` |
+| LLM        | HuggingFace Llama 3.2 1B or Claude                   |
+| Judge      | HuggingFace — `meta-llama/Llama-3.3-70B-Instruct`    |
+| Storage    | Supabase Storage or MinIO (S3-compatible)            |
+
+
+
 
 ## How it works
 
-1. **Upload** — browser POSTs PDF to `/upload`; backend stores it in Supabase Storage
-2. **Index** — background task: extract text → chunk (800 chars, 100 overlap) → embed → store in PostgreSQL
-3. **Chat** — question → embed → hybrid search → LLM → answer with citations; full history saved per session
+1. **Upload** — POST a PDF to `/upload`; the app stores it and indexes in the background
+2. **Index** — extract text → chunk (800 chars, 100 overlap) → embed → store in PostgreSQL
+3. **Query** — embed question → retrieve a candidate pool → optionally rerank → generate grounded answer with citations
+4. **Evaluate** — generate a gold set, then run `/eval` to compare retrieval modes, reranking lift, and answer quality
+
+### Config sweeps
+
+The in-app evaluation dashboard sweeps search mode (`hybrid` / `semantic` / `keyword`) and reranking on/off. You can also pick the answer-generation LLM (`claude` / `hf`) when running answer-quality scoring.
+
+Chunk-size and embedding-model sweeps require re-ingestion: update `PDF_CHUNK_SIZE`, `HF_EMBED_MODEL`, or related settings in `.env`, re-upload documents, then run a fresh evaluation so every run is compared against the same gold-set hash.
+
+
 
 ## Setup
 
+
+
+### Local dev (Postgres in Docker)
+
 ```bash
-# Backend
-cd backend && uv sync
-cp .env.example .env   # fill in values below
-uvicorn src.main:app --reload
-
-# Frontend
-cd frontend && npm install && npm start
+docker compose up postgres -d
+uv sync
+cp .env.example .env   # DATABASE_URL already points at localhost Postgres
+# add HF_TOKEN and storage keys for uploads + inference
+uv run uvicorn src.main:app --reload
 ```
 
-**.env**
+Open **[http://localhost:8000](http://localhost:8000)** for chat, **[http://localhost:8000/eval](http://localhost:8000/eval)** for the evaluation dashboard.
 
-```
-DATABASE_URL=postgresql://postgres:[password]@db.[project].supabase.co:5432/postgres
-SUPABASE_SERVICE_KEY=...
-HF_TOKEN=hf_...
-CLAUDE_TOKEN=sk-ant-...   # optional — used for evaluation
-```
+### Generate a gold set
 
-**frontend/.env**
+The fastest way is the **Generate Gold Set** button on the `/eval` dashboard — pick a sample size and click; it samples indexed chunks and generates QA pairs with the HF judge model (`HF_JUDGE_MODEL`, defaults to `meta-llama/Llama-3.3-70B-Instruct`), appending to the existing gold set. Requires `HF_TOKEN`.
 
-```
-REACT_APP_API_PREFIX=http://localhost:8000
-REACT_APP_SUPABASE_URL=https://[project].supabase.co
-REACT_APP_SUPABASE_ANON_KEY=...
-REACT_APP_SUPABASE_BUCKET=files
+Alternatively, run it from the CLI (uses Claude instead):
+
+```bash
+python tests/retriever-evaluation/generate_gold_set.py --sample-n 20
 ```
 
-> **Supabase setup**: disable RLS on the `uploads` and `chunks` tables, or grant service role full access.
+Requires indexed PDFs in the database and `CLAUDE_TOKEN`.
+
+### Run offline evaluation (CLI)
+
+```bash
+python tests/retriever-evaluation/evaluate.py --qa tests/retriever-evaluation/gold_set.json --rerank
+python tests/retriever-evaluation/answer_quality.py --qa tests/retriever-evaluation/gold_set.json --mode all
+```
+
+
 
 ## API
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/health` | Liveness + DB status |
-| POST | `/upload` | Upload PDF (multipart) — stores + queues indexing |
-| GET | `/documents` | List documents with status and chunk count |
-| DELETE | `/files/{filename}` | Delete document and all its chunks |
-| POST | `/chat` | Chat with history (question, top_k, search_mode) |
-| GET | `/history` | Full conversation history |
-| POST | `/query` | Stateless search + LLM (no history) |
-| GET | `/eval/summary` | Pre-computed retrieval + answer quality results |
+
+| Method | Path                | Description                                                                 |
+| ------ | ------------------- | --------------------------------------------------------------------------- |
+| GET    | `/`                 | Chat UI                                                                     |
+| GET    | `/eval`             | Evaluation dashboard                                                        |
+| GET    | `/eval/history`     | Evaluation run history                                                      |
+| GET    | `/eval/{run_id}`    | Single evaluation run detail                                                |
+| GET    | `/eval/summary`     | Latest evaluation run (JSON)                                                |
+| POST   | `/eval/run`         | Run retrieval evaluation on gold set (`llm`, `include_answer_quality`)      |
+| POST   | `/eval/gold-set/generate` | Generate gold-set QA pairs from indexed chunks via HF judge model      |
+| GET    | `/health`           | Liveness + DB status                                                        |
+| POST   | `/upload`           | Upload PDF (multipart)                                                      |
+| GET    | `/documents`        | List documents with status                                                  |
+| DELETE | `/files/{filename}` | Delete document and chunks                                                  |
+| POST   | `/chat`             | RAG query (`persist: false` for stateless eval calls; `rerank: true/false`) |
+| GET    | `/history`          | Conversation history                                                        |
+
+
+
 
 ## Database
 
-![schema](docs/image.png)
+- `uploads` — one row per PDF (`filename` PK, `blob_url`, `status`, `page_count`)
+- `chunks` — text chunks with 384-dim vector + tsvector
+- `messages` — chat history (`role`, `content`, `chunks` JSONB)
+- `eval_runs` — persisted evaluation results (`config`, `retrieval_results`, `answer_quality_results`)
 
-- **`uploads`** — one row per PDF (`filename` PK, `blob_url`, `status`, `page_count`)
-- **`chunks`** — text chunks with 384-dim vector + tsvector; cascades on delete
-- **`messages`** — chat history (`role`, `content`, `chunks` JSONB)
 
-## Evaluation
 
-Results on a 20-question gold set from ML/AI textbooks (top-k=5):
+## Configuration
 
-| Mode | Precision@5 | Recall@5 | F1 |
-|---|---|---|---|
-| hybrid | 10% | 40% | 16% |
-| semantic | 6% | 30% | 10% |
-| keyword | 19% | 80% | 31% |
+Key environment variables (see `.env.example`):
 
-Keyword wins on this corpus because questions are generated directly from chunk text. Hybrid/semantic are expected to improve on paraphrased queries.
+```
+DATABASE_URL=postgresql://...
+HF_TOKEN=hf_...
+HF_JUDGE_MODEL=meta-llama/Llama-3.3-70B-Instruct
+CLAUDE_TOKEN=sk-ant-...          # optional, used for gold-set generation and chat LLM
+RERANK_ENABLED=true              # default on
+HF_RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+```
+
+
 
 ## Limitations
 
 - No OCR — image-only PDFs are marked `skipped`
-- No auth — chat history is global (single shared thread)
+- No auth — chat history and eval runs are global
 - Max 100 MB per PDF
 - LLM context capped at last 6 turns
+- Reranker requires `HF_TOKEN`; fails open if unavailable
+

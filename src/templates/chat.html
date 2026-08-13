@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "partials/message.html" import render_message %}
+
+{% block title %}Antares — Chat{% endblock %}
+
+{% block content %}
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>Documents</h1>
+    </div>
+
+    <form
+      class="upload-area"
+      hx-post="/upload"
+      hx-encoding="multipart/form-data"
+      hx-target="#documents"
+      hx-swap="innerHTML"
+    >
+      <label class="upload-doc-btn">
+        Upload Document
+        <input type="file" name="file" accept=".pdf" style="display:none" onchange="this.form.requestSubmit()">
+      </label>
+      <p class="upload-hint">Select a PDF (max 100 MB)</p>
+    </form>
+
+    <div
+      id="documents"
+      class="kb-section"
+      hx-get="/partials/documents"
+      hx-trigger="every 3s"
+      hx-swap="innerHTML"
+    >
+      {% include "partials/documents.html" %}
+    </div>
+  </aside>
+
+  <main class="chat-panel">
+    <div class="chat-container">
+      <div id="messages" class="chat-thread" aria-live="polite" aria-label="Conversation">
+        {% if not messages %}
+        <div class="chat-empty">
+          <p>Upload a document, then ask anything about it.</p>
+        </div>
+        {% endif %}
+        {% for msg in messages %}
+        {{ render_message(msg, blob_by_filename) }}
+        {% endfor %}
+      </div>
+
+      <div class="chat-input-bar">
+        <form
+          class="chat-input-row"
+          hx-post="/chat"
+          hx-target="#messages"
+          hx-swap="beforeend"
+          hx-on::after-request="this.reset(); document.getElementById('messages').querySelector('.chat-empty')?.remove(); this.querySelector('.chat-input').focus()"
+        >
+          <input
+            class="chat-input"
+            type="text"
+            name="question"
+            placeholder="Ask about your documents…"
+            aria-label="Message"
+            required
+            autocomplete="off"
+          >
+          <button class="send-btn" type="submit" aria-label="Send message">➤</button>
+        </form>
+        <p class="chat-disclaimer">AI-generated content may be inaccurate.</p>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

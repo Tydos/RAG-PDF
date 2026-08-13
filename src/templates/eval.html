@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Antares — Evaluation{% endblock %}
+
+{% block content %}
+<main class="eval-dashboard">
+  <header class="eval-header">
+    <div>
+      <h1>Retrieval Evaluation</h1>
+      <p class="eval-subtitle">Compare hybrid, semantic, and keyword retrieval with optional reranking.</p>
+    </div>
+    <div class="eval-meta">
+      <form
+        class="eval-run-form"
+        hx-post="/eval/gold-set/generate"
+        hx-target="#eval-results"
+        hx-swap="innerHTML"
+        hx-indicator="#goldset-spinner"
+      >
+        <label class="eval-form-field">
+          Sample size
+          <input type="number" name="sample_n" value="20" min="1" max="500">
+        </label>
+        <button class="eval-run-btn" type="submit" {% if not judge_available %}disabled{% endif %}>
+          Generate Gold Set
+        </button>
+        <span id="goldset-spinner" class="htmx-indicator eval-note">Generating with Llama 3.3 70B…</span>
+      </form>
+
+      <form
+        class="eval-run-form"
+        hx-post="/eval/run"
+        hx-target="#eval-results"
+        hx-swap="innerHTML"
+      >
+        <label class="eval-form-field">
+          Top-k
+          <input type="number" name="top_k" value="5" min="1" max="20">
+        </label>
+        <label class="eval-form-field">
+          LLM
+          <select name="llm">
+            <option value="auto">Auto</option>
+            <option value="claude">Claude</option>
+            <option value="hf">HuggingFace</option>
+          </select>
+        </label>
+        <label class="eval-form-checkbox">
+          <input type="checkbox" name="include_answer_quality" value="true">
+          Include answer quality (HF judge)
+        </label>
+        <button class="eval-run-btn" type="submit">Run Evaluation</button>
+      </form>
+      {% if not judge_available %}
+      <p class="eval-note">Set <code>HF_TOKEN</code> to enable gold-set generation and Llama 3.3 70B answer-quality judging.</p>
+      {% endif %}
+    </div>
+  </header>
+
+  <div id="eval-results">
+    {% include "partials/eval_results.html" %}
+  </div>
+
+  <div
+    id="eval-history"
+    hx-get="/partials/eval-history"
+    hx-trigger="load, evalRunComplete from:body"
+    hx-swap="innerHTML"
+  >
+    {% include "partials/eval_history.html" %}
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.body.addEventListener("htmx:afterSwap", (event) => {
+    if (event.target && event.target.id === "eval-results") {
+      document.body.dispatchEvent(new Event("evalRunComplete"));
+    }
+  });
+</script>
+{% endblock %}

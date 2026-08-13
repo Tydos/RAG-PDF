@@ -1,0 +1,18 @@
+{% macro render_message(msg, blob_by_filename) %}
+<div class="msg msg-{{ msg.role }}">
+  <div class="msg-bubble">{{ msg.content }}</div>
+  {% if msg.role == 'assistant' and msg.chunks %}
+  <div class="msg-sources" aria-label="Sources">
+    {% for c in msg.chunks[:3] %}
+      {% set url = blob_by_filename.get(c.filename) %}
+      {% set label = c.filename ~ ' p.' ~ c.page %}
+      {% if url %}
+      <a class="source-chip" href="{{ url }}#page={{ c.page }}" target="_blank" rel="noopener noreferrer">{{ label }} ↗</a>
+      {% else %}
+      <span class="source-chip">{{ label }}</span>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endmacro %}

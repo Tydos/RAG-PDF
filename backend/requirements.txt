@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-pypdf
-pydantic-settings
-psycopg[binary]
-psycopg-pool
-httpx
-python-multipart
-python-dotenv

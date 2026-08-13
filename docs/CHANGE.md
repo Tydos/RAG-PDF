@@ -17,3 +17,5 @@
 9. Used Claude Impeccable skills to polish exisiting UI into more accessible and clean UI/UX. Added a evaluation page to reduce the clutter and made upload section drag-and-drop
 
 10. Read the documentation for Connection Pooling, it is not suited for a serverless instances which get turned off after use, hence removed psyopg connection pool setup.
+
+11. Added cross-encoder reranking via HuggingFace Inference API (retrieve wider pool, rerank to top-k) and wired an in-app Evaluation dashboard with persisted eval runs, retrieval metrics, and optional Claude-as-judge answer quality scoring.
