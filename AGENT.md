@@ -70,6 +70,22 @@ When the user asks you to **review**, **improve**, or **audit** code (a file, mo
 
 **Balance KISS and DRY:** duplication in two places is a smell; a premature abstraction used once is worse. Extract on the second use, not the first.
 
+## Configuration — single source in `src/config.py`
+
+**All constants and config values belong in [`src/config.py`](src/config.py).** Do not define tunable limits, feature flags, URLs, model names, paths, or env-backed values in route handlers, services, or other modules.
+
+- Add new settings as fields on the `Settings` class (with sensible defaults). Use env vars via pydantic-settings field names (e.g. `max_upload_bytes` → `MAX_UPLOAD_BYTES`).
+- Import config everywhere else: `from src.config import settings`. For module-level path constants defined in `config.py` (e.g. `PROJECT_ROOT`), import those by name from the same module.
+- **Do not** call `os.getenv()` outside `src/config.py`.
+- **Do not** duplicate the same limit or default in multiple files — if two modules need it, it lives in `Settings` once.
+
+**Exceptions** (keep local; do not move to config unless they become tunable or shared):
+
+- SQL DDL and one-off implementation literals in a single private helper
+- Docstring examples and test-only fixtures
+
+When reviewing or refactoring, flag module-level `UPPER_CASE` assignments outside `src/config.py` and move them unless they clearly fit an exception above.
+
 ## Concurrency and authentication (design defaults)
 
 **Assume multiple users and overlapping requests.** Do not write code as if only one request runs at a time.

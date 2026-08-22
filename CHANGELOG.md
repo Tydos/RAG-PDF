@@ -20,6 +20,10 @@ All notable changes made in agent sessions are recorded here. Newest entries fir
 
 ### Changed
 
+- Split monolithic `src/main.py` into domain routers (`src/routes/pages.py`, `chat.py`, `documents.py`, `eval.py`, `health.py`), shared deps (`src/deps.py`), template context helpers (`src/routes/context.py`), and RAG orchestration (`src/services/rag.py`); `main.py` now only wires app, lifespan, middleware, and `include_router`.
+- `AGENT.md` — require all constants and config values in `src/config.py`; no `os.getenv()` outside config; import via `settings` (and shared path constants like `PROJECT_ROOT`).
+- `src/config.py` — centralize upload limit, CORS origins, eval list limits, gold-set sample cap, and `PROJECT_ROOT`; add `cors_origin_list` property.
+- `src/main.py` — remove local `BASE_DIR`, `MAX_UPLOAD_BYTES`, and `os.getenv("CORS_ORIGINS")`; use `settings` and `PROJECT_ROOT` instead.
 - `AGENT.md` — code review requests must read `AGENT.md` and the target files first, then reply verbosely against the full checklist (no drive-by nits; no code edits unless asked).
 - `AGENT.md` — require designing for concurrent requests and future authentication (shared state, races, fail-closed, scoped data, document auth gaps).
 - `AGENT.md` — require verbose session replies explaining what changed, why, reuse, risks, deferrals, and verification.

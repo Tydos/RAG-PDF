@@ -3,6 +3,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class Settings(BaseSettings):
@@ -14,7 +15,12 @@ class Settings(BaseSettings):
 
     database_url: str = ""
     log_level: str = "INFO"
+    cors_origins: str = ""
     query_top_k_max: int = 20
+    max_upload_bytes: int = 100 * 1024 * 1024
+    eval_runs_partial_limit: int = 20
+    eval_runs_history_limit: int = 50
+    gold_set_sample_max: int = 500
 
     storage_backend: str = "supabase"  # "supabase" or "s3" (MinIO)
 
@@ -65,6 +71,10 @@ class Settings(BaseSettings):
     @property
     def use_s3_storage(self) -> bool:
         return self.storage_backend.lower() == "s3" or bool(self.s3_endpoint.strip())
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
 
 settings = Settings()
