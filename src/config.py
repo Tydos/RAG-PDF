@@ -5,6 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+HF_JUDGE_MODEL = "meta-llama/Llama-3.3-70B-Instruct"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -22,17 +24,12 @@ class Settings(BaseSettings):
     eval_runs_history_limit: int = 50
     gold_set_sample_max: int = 500
 
-    storage_backend: str = "supabase"  # "supabase" or "s3" (MinIO)
-
-    supabase_url: str = ""
-    supabase_service_key: str = ""
-    supabase_bucket: str = "files"
-
     s3_endpoint: str = ""
     s3_public_url: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_bucket: str = "files"
+    s3_region: str = "local"
 
     hf_token: str = ""
     hf_embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -47,7 +44,6 @@ class Settings(BaseSettings):
     hf_llm_model: str = "meta-llama/Llama-3.2-1B-Instruct:featherless-ai"
     hf_llm_max_tokens: int = 400
 
-    hf_judge_model: str = "meta-llama/Llama-3.3-70B-Instruct"
     hf_judge_max_tokens: int = 200
 
     claude_token: str = ""
@@ -69,12 +65,12 @@ class Settings(BaseSettings):
     claude_api_version: str = "2023-06-01"
 
     @property
-    def use_s3_storage(self) -> bool:
-        return self.storage_backend.lower() == "s3" or bool(self.s3_endpoint.strip())
-
-    @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def hf_judge_model(self) -> str:
+        return HF_JUDGE_MODEL
 
 
 settings = Settings()

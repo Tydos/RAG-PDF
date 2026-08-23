@@ -109,9 +109,6 @@ class TestGoldSetGeneration:
         from src.evaluation.gold_set import generate_gold_set
 
         monkeypatch.setattr("src.evaluation.gold_set.settings.hf_token", "tok")
-        monkeypatch.setattr(
-            "src.evaluation.gold_set.settings.hf_judge_model", "meta-llama/Llama-3.3-70B-Instruct"
-        )
 
         out_path = tmp_path / "gold.json"
         out_path.write_text(

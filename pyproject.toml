@@ -10,7 +10,7 @@ dependencies = [
     "pydantic-settings",
     "psycopg[binary]",
     "httpx",
-    "minio",
+    "boto3",
     "pyyaml>=6.0.3",
     "python-multipart>=0.0.32",
 ]

@@ -23,7 +23,7 @@ Use the **Chat** view for interactive queries with citations. Use the **Evaluati
 | Reranker   | HuggingFace — `cross-encoder/ms-marco-MiniLM-L-6-v2` |
 | LLM        | HuggingFace Llama 3.2 1B or Claude                   |
 | Judge      | HuggingFace — `meta-llama/Llama-3.3-70B-Instruct`    |
-| Storage    | Supabase Storage or MinIO (S3-compatible)            |
+| Storage    | S3-compatible (MinIO locally, Supabase Storage in prod) |
 
 
 
@@ -61,7 +61,7 @@ Open **[http://localhost:8000](http://localhost:8000)** for chat, **[http://loca
 
 ### Generate a gold set
 
-The fastest way is the **Generate Gold Set** button on the `/eval` dashboard — pick a sample size and click; it samples indexed chunks and generates QA pairs with the HF judge model (`HF_JUDGE_MODEL`, defaults to `meta-llama/Llama-3.3-70B-Instruct`), appending to the existing gold set. Requires `HF_TOKEN`.
+The fastest way is the **Generate Gold Set** button on the `/eval` dashboard — pick a sample size and click; it samples indexed chunks and generates QA pairs with the HF judge model (`meta-llama/Llama-3.3-70B-Instruct`), appending to the existing gold set. Requires `HF_TOKEN`.
 
 Alternatively, run it from the CLI (uses Claude instead):
 
@@ -117,8 +117,13 @@ Key environment variables (see `.env.example`):
 
 ```
 DATABASE_URL=postgresql://...
+S3_ENDPOINT=http://localhost:9000
+S3_PUBLIC_URL=http://localhost:9000
+S3_ACCESS_KEY=...
+S3_SECRET_KEY=...
+S3_BUCKET=files
+S3_REGION=local                  # use your Supabase project region in prod
 HF_TOKEN=hf_...
-HF_JUDGE_MODEL=meta-llama/Llama-3.3-70B-Instruct
 CLAUDE_TOKEN=sk-ant-...          # optional, used for gold-set generation and chat LLM
 RERANK_ENABLED=true              # default on
 HF_RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
