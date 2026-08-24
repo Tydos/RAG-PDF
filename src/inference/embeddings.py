@@ -50,6 +50,37 @@ class HuggingFaceEmbeddingService:
             timeout=settings.hf_embed_timeout,
         )
 
+    def _validate_embeddings(self, texts: list[str], vectors: list[list[float]]) -> None:
+        """Ensure API output matches input count and ``settings.embed_dim``.
+
+        Args:
+            texts: Input texts sent in the request.
+            vectors: Parsed embedding vectors from the API.
+
+        Raises:
+            InvalidEmbeddingDimensions: If count, shape, or vector length is wrong.
+        """
+        expected = settings.embed_dim
+
+        if len(vectors) != len(texts):
+            raise InvalidEmbeddingDimensions(
+                f"Expected {len(texts)} embeddings, got {len(vectors)}"
+            )
+
+        for index, vector in enumerate(vectors):
+            if not isinstance(vector, list) or not vector:
+                raise InvalidEmbeddingDimensions(
+                    f"Embedding at index {index} is not a non-empty list"
+                )
+            if len(vector) != expected:
+                raise InvalidEmbeddingDimensions(
+                    f"Embedding at index {index} has length {len(vector)}, expected {expected}"
+                )
+            if not all(isinstance(value, (int, float)) for value in vector):
+                raise InvalidEmbeddingDimensions(
+                    f"Embedding at index {index} contains non-numeric values"
+                )
+
     async def _fetch_embeddings(self, texts: list[str]) -> list[list[float]]:
         """Request embeddings for a batch of texts with transient-error retries.
 
@@ -63,6 +94,7 @@ class HuggingFaceEmbeddingService:
             HFAuthError: On HTTP 401 or 403.
             HFTimeoutError: When the request times out after all retry attempts.
             HFError: When retryable HTTP or network errors are exhausted.
+            InvalidEmbeddingDimensions: When vector count or length is invalid.
             httpx.HTTPStatusError: On non-retryable HTTP error responses.
         """
         max_attempts = 3
@@ -90,6 +122,7 @@ class HuggingFaceEmbeddingService:
                 data = response.json()
                 if isinstance(data, list) and data and not isinstance(data[0], list):
                     data = [data]
+                self._validate_embeddings(texts, data)
                 return data
 
             except httpx.TimeoutException as e:
@@ -116,6 +149,7 @@ class HuggingFaceEmbeddingService:
 
         Raises:
             ValueError: If ``batch_size`` is not a positive integer.
+            InvalidEmbeddingDimensions: When a batch response has wrong count or length.
             HFError: If a batched API request fails after retries.
         """
         if not texts:

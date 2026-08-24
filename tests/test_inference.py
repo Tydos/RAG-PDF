@@ -12,6 +12,7 @@ from src.inference.embeddings import (
     HFError,
     HFTimeoutError,
     HuggingFaceEmbeddingService,
+    InvalidEmbeddingDimensions,
     MissingHFToken,
 )
 from src.inference.reranker import HuggingFaceReranker
@@ -172,6 +173,29 @@ class TestHuggingFaceEmbeddingService:
 
         with patch.object(embedding_svc._client, "post", new=AsyncMock(return_value=mock_response)):
             with pytest.raises(httpx.HTTPStatusError):
+                await embedding_svc._fetch_embeddings(["text"])
+
+    def test_validate_embeddings_rejects_wrong_length(self, embedding_svc):
+        with pytest.raises(InvalidEmbeddingDimensions, match="length 128"):
+            embedding_svc._validate_embeddings(["a"], [[0.1] * 128])
+
+    def test_validate_embeddings_rejects_count_mismatch(self, embedding_svc):
+        with pytest.raises(InvalidEmbeddingDimensions, match="Expected 2"):
+            embedding_svc._validate_embeddings(["a", "b"], [[0.1] * 384])
+
+    def test_validate_embeddings_rejects_non_numeric_values(self, embedding_svc):
+        with pytest.raises(InvalidEmbeddingDimensions, match="non-numeric"):
+            embedding_svc._validate_embeddings(["a"], [["not-a-number"] + [0.1] * 383])
+
+    @pytest.mark.asyncio
+    async def test_fetch_validates_dimensions(self, embedding_svc):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [[0.1] * 128]
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(embedding_svc._client, "post", new=AsyncMock(return_value=mock_response)):
+            with pytest.raises(InvalidEmbeddingDimensions, match="length 128"):
                 await embedding_svc._fetch_embeddings(["text"])
 
 

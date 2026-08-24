@@ -13,8 +13,8 @@ All notable changes made in agent sessions are recorded here. Newest entries fir
 
 ### Added
 
-- `InvalidEmbeddingDimensions` exception class reserved for future response validation against `settings.embed_dim`; not raised yet.
-- `tests/test_inference.py` — updated embedding tests for `MissingHFToken` at construction time; added coverage for `HFAuthError`, exhausted 429/timeout retries, 429-then-success, invalid batch size, and non-retryable HTTP errors.
+- `src/inference/embeddings.py` — `_validate_embeddings` checks API responses against input count and ``settings.embed_dim``; raises ``InvalidEmbeddingDimensions`` before vectors reach ingestion or search (reuses existing config and exception class).
+- `tests/test_inference.py` — updated embedding tests for `MissingHFToken` at construction time; added coverage for `HFAuthError`, exhausted 429/timeout retries, 429-then-success, invalid batch size, non-retryable HTTP errors, and embedding dimension validation.
 
 ### Fixed
 
