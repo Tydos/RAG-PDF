@@ -2,10 +2,18 @@
 Unit tests for embedding and generator inference code.
 All external I/O (HTTP) is mocked via AsyncMock on the httpx client — no live APIs needed.
 """
+
+import httpx
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.inference.embeddings import HuggingFaceEmbeddingService
+from src.inference.embeddings import (
+    HFAuthError,
+    HFError,
+    HFTimeoutError,
+    HuggingFaceEmbeddingService,
+    MissingHFToken,
+)
 from src.inference.reranker import HuggingFaceReranker
 from src.inference.rag_generator import LLMResponseGenerator
 from src.inference.prompt_builder import PromptBuilder
@@ -22,7 +30,7 @@ SAMPLE_CHUNKS = [
 ]
 
 SAMPLE_HISTORY = [
-    {"role": "user",      "content": "What color is the sky?"},
+    {"role": "user", "content": "What color is the sky?"},
     {"role": "assistant", "content": "Blue."},
 ]
 
@@ -31,36 +39,43 @@ SAMPLE_HISTORY = [
 # HuggingFaceEmbeddingService
 # ===========================================================================
 
+
+@pytest.fixture
+def embedding_svc(monkeypatch):
+    """Construct HuggingFaceEmbeddingService with a token present."""
+    monkeypatch.setattr("src.inference.embeddings.settings.hf_token", "test-token")
+    return HuggingFaceEmbeddingService()
+
+
 class TestHuggingFaceEmbeddingService:
+    @pytest.mark.asyncio
+    async def test_empty_input_returns_empty_list(self, embedding_svc):
+        assert await embedding_svc.embed([]) == []
+
+    def test_raises_when_token_missing(self, monkeypatch):
+        monkeypatch.setattr("src.inference.embeddings.settings.hf_token", "")
+        with pytest.raises(MissingHFToken, match="HF_TOKEN"):
+            HuggingFaceEmbeddingService()
 
     @pytest.mark.asyncio
-    async def test_empty_input_returns_empty_list(self):
-        svc = HuggingFaceEmbeddingService()
-        assert await svc.embed([]) == []
+    async def test_raises_on_invalid_batch_size(self, embedding_svc):
+        with pytest.raises(ValueError, match="Batch size"):
+            await embedding_svc.embed(["hello"], batch_size=-1)
 
     @pytest.mark.asyncio
-    async def test_raises_when_token_missing(self):
-        svc = HuggingFaceEmbeddingService()
-        with patch("src.inference.embeddings.settings") as mock_settings:
-            mock_settings.hf_token = ""
-            with pytest.raises(RuntimeError, match="HF_TOKEN"):
-                await svc.embed(["hello"])
-
-    @pytest.mark.asyncio
-    async def test_single_batch_calls_fetch_once(self):
-        svc = HuggingFaceEmbeddingService()
+    async def test_single_batch_calls_fetch_once(self, embedding_svc):
         fake_vectors = [[0.1] * 384, [0.2] * 384]
-        with patch.object(svc, "_fetch_embeddings", new=AsyncMock(return_value=fake_vectors)) as mock_fetch:
+        with patch.object(
+            embedding_svc, "_fetch_embeddings", new=AsyncMock(return_value=fake_vectors)
+        ) as mock_fetch:
             with patch("src.inference.embeddings.settings") as mock_settings:
-                mock_settings.hf_token = "tok"
                 mock_settings.hf_embed_batch_size = 32
-                result = await svc.embed(["text a", "text b"])
+                result = await embedding_svc.embed(["text a", "text b"])
         mock_fetch.assert_called_once_with(["text a", "text b"])
         assert result == fake_vectors
 
     @pytest.mark.asyncio
-    async def test_large_input_batches_correctly(self):
-        svc = HuggingFaceEmbeddingService()
+    async def test_large_input_batches_correctly(self, embedding_svc):
         texts = [f"text {i}" for i in range(5)]
         batch_vectors = [[float(i)] * 384 for i in range(5)]
 
@@ -68,49 +83,104 @@ class TestHuggingFaceEmbeddingService:
             start = int(batch[0].split()[-1])
             return [batch_vectors[start + j] for j in range(len(batch))]
 
-        with patch.object(svc, "_fetch_embeddings", side_effect=fake_fetch):
+        with patch.object(embedding_svc, "_fetch_embeddings", side_effect=fake_fetch):
             with patch("src.inference.embeddings.settings") as mock_settings:
-                mock_settings.hf_token = "tok"
                 mock_settings.hf_embed_batch_size = 2
-                result = await svc.embed(texts, batch_size=2)
+                result = await embedding_svc.embed(texts, batch_size=2)
 
         assert len(result) == 5
         assert result[0] == batch_vectors[0]
         assert result[4] == batch_vectors[4]
 
     @pytest.mark.asyncio
-    async def test_fetch_normalises_single_vector_response(self):
+    async def test_fetch_normalises_single_vector_response(self, embedding_svc):
         """HF API sometimes returns a flat list for a single input; must be wrapped."""
-        svc = HuggingFaceEmbeddingService()
         flat_vector = [0.1] * 384
         mock_response = MagicMock()
+        mock_response.status_code = 200
         mock_response.json.return_value = flat_vector
         mock_response.raise_for_status = MagicMock()
 
-        with patch.object(svc._client, "post", new=AsyncMock(return_value=mock_response)):
-            result = await svc._fetch_embeddings(["single text"])
+        with patch.object(embedding_svc._client, "post", new=AsyncMock(return_value=mock_response)):
+            result = await embedding_svc._fetch_embeddings(["single text"])
 
         assert result == [flat_vector]
 
     @pytest.mark.asyncio
-    async def test_fetch_raises_on_http_error(self):
-        import httpx
+    async def test_fetch_raises_hf_auth_error_on_401(self, embedding_svc):
         mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        with patch.object(embedding_svc._client, "post", new=AsyncMock(return_value=mock_response)):
+            with pytest.raises(HFAuthError, match="Invalid Credentials"):
+                await embedding_svc._fetch_embeddings(["text"])
+
+    @pytest.mark.asyncio
+    async def test_fetch_raises_hf_error_after_exhausted_429(self, embedding_svc):
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_post = AsyncMock(return_value=mock_response)
+
+        with (
+            patch.object(embedding_svc._client, "post", mock_post),
+            patch("src.inference.embeddings.asyncio.sleep", new=AsyncMock()),
+        ):
+            with pytest.raises(HFError, match="status code 429"):
+                await embedding_svc._fetch_embeddings(["text"])
+
+        assert mock_post.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_fetch_retries_429_then_succeeds(self, embedding_svc):
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        ok_response = MagicMock()
+        ok_response.status_code = 200
+        ok_response.json.return_value = [[0.1] * 384]
+        ok_response.raise_for_status = MagicMock()
+        mock_post = AsyncMock(side_effect=[rate_limited, ok_response])
+
+        with (
+            patch.object(embedding_svc._client, "post", mock_post),
+            patch("src.inference.embeddings.asyncio.sleep", new=AsyncMock()),
+        ):
+            result = await embedding_svc._fetch_embeddings(["text"])
+
+        assert result == [[0.1] * 384]
+        assert mock_post.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_fetch_raises_hf_timeout_after_exhausted_timeouts(self, embedding_svc):
+        mock_post = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
+
+        with (
+            patch.object(embedding_svc._client, "post", mock_post),
+            patch("src.inference.embeddings.asyncio.sleep", new=AsyncMock()),
+        ):
+            with pytest.raises(HFTimeoutError, match="timed out"):
+                await embedding_svc._fetch_embeddings(["text"])
+
+        assert mock_post.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_fetch_raises_http_status_error_on_other_codes(self, embedding_svc):
+        mock_response = MagicMock()
+        mock_response.status_code = 400
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "401", request=MagicMock(), response=MagicMock()
+            "400", request=MagicMock(), response=mock_response
         )
-        svc = HuggingFaceEmbeddingService()
-        with patch.object(svc._client, "post", new=AsyncMock(return_value=mock_response)):
-            with pytest.raises(Exception):
-                await svc._fetch_embeddings(["text"])
+
+        with patch.object(embedding_svc._client, "post", new=AsyncMock(return_value=mock_response)):
+            with pytest.raises(httpx.HTTPStatusError):
+                await embedding_svc._fetch_embeddings(["text"])
 
 
 # ===========================================================================
 # HuggingFaceReranker
 # ===========================================================================
 
-class TestHuggingFaceReranker:
 
+class TestHuggingFaceReranker:
     @pytest.mark.asyncio
     async def test_empty_chunks_returns_empty_list(self):
         reranker = HuggingFaceReranker()
@@ -124,7 +194,9 @@ class TestHuggingFaceReranker:
             {"content": "high", "score": 0.9},
             {"content": "mid", "score": 0.5},
         ]
-        with patch.object(reranker, "_score_candidates", new=AsyncMock(return_value=[0.1, 0.9, 0.5])):
+        with patch.object(
+            reranker, "_score_candidates", new=AsyncMock(return_value=[0.1, 0.9, 0.5])
+        ):
             with patch("src.inference.reranker.settings") as mock_settings:
                 mock_settings.hf_token = "tok"
                 result = await reranker.rerank("query", chunks, 2)
@@ -135,7 +207,9 @@ class TestHuggingFaceReranker:
     async def test_fail_open_on_http_error(self):
         reranker = HuggingFaceReranker()
         chunks = [{"content": "a"}, {"content": "b"}]
-        with patch.object(reranker, "_score_candidates", new=AsyncMock(side_effect=RuntimeError("down"))):
+        with patch.object(
+            reranker, "_score_candidates", new=AsyncMock(side_effect=RuntimeError("down"))
+        ):
             with patch("src.inference.reranker.settings") as mock_settings:
                 mock_settings.hf_token = "tok"
                 result = await reranker.rerank("query", chunks, 1)
@@ -155,8 +229,8 @@ class TestHuggingFaceReranker:
 # PromptBuilder
 # ===========================================================================
 
-class TestPromptBuilder:
 
+class TestPromptBuilder:
     def test_format_chunks_produces_numbered_blocks(self):
         text = PromptBuilder.format_chunks(SAMPLE_CHUNKS)
         assert "[1] [doc.pdf p.1]" in text
@@ -214,8 +288,8 @@ class TestPromptBuilder:
 # HuggingFaceAdapter
 # ===========================================================================
 
-class TestHuggingFaceAdapter:
 
+class TestHuggingFaceAdapter:
     def _make_adapter(self):
         return HuggingFaceAdapter(model="test-model", token="tok")
 
@@ -229,8 +303,14 @@ class TestHuggingFaceAdapter:
     @pytest.mark.asyncio
     async def test_calls_post(self):
         adapter = self._make_adapter()
-        with patch.object(adapter._client, "post", new=AsyncMock(return_value=self._mock_response("  answer text  "))) as mock_post:
-            result = await adapter.generate([{"role": "user", "content": "q"}], max_tokens=100, temperature=0.2)
+        with patch.object(
+            adapter._client,
+            "post",
+            new=AsyncMock(return_value=self._mock_response("  answer text  ")),
+        ) as mock_post:
+            result = await adapter.generate(
+                [{"role": "user", "content": "q"}], max_tokens=100, temperature=0.2
+            )
         mock_post.assert_called_once()
         assert result == "answer text"
 
@@ -238,7 +318,9 @@ class TestHuggingFaceAdapter:
     async def test_passes_correct_params(self):
         adapter = self._make_adapter()
         messages = [{"role": "user", "content": "hello"}]
-        with patch.object(adapter._client, "post", new=AsyncMock(return_value=self._mock_response("ok"))) as mock_post:
+        with patch.object(
+            adapter._client, "post", new=AsyncMock(return_value=self._mock_response("ok"))
+        ) as mock_post:
             await adapter.generate(messages, max_tokens=200, temperature=0.5)
         payload = mock_post.call_args.kwargs["json"]
         assert payload["model"] == "test-model"
@@ -249,7 +331,11 @@ class TestHuggingFaceAdapter:
     @pytest.mark.asyncio
     async def test_strips_whitespace_from_response(self):
         adapter = self._make_adapter()
-        with patch.object(adapter._client, "post", new=AsyncMock(return_value=self._mock_response("\n  trimmed  \n"))):
+        with patch.object(
+            adapter._client,
+            "post",
+            new=AsyncMock(return_value=self._mock_response("\n  trimmed  \n")),
+        ):
             result = await adapter.generate([], 100, 0.2)
         assert result == "trimmed"
 
@@ -267,8 +353,8 @@ class TestHuggingFaceAdapter:
 # ClaudeAdapter
 # ===========================================================================
 
-class TestClaudeAdapter:
 
+class TestClaudeAdapter:
     def _make_adapter(self):
         return ClaudeAdapter(model="claude-test", token="tok")
 
@@ -284,9 +370,11 @@ class TestClaudeAdapter:
         adapter = self._make_adapter()
         messages = [
             {"role": "system", "content": "You are helpful."},
-            {"role": "user",   "content": "Hello"},
+            {"role": "user", "content": "Hello"},
         ]
-        with patch.object(adapter._client, "post", new=AsyncMock(return_value=self._mock_response("answer"))) as mock_post:
+        with patch.object(
+            adapter._client, "post", new=AsyncMock(return_value=self._mock_response("answer"))
+        ) as mock_post:
             await adapter.generate(messages, max_tokens=100, temperature=0.2)
         payload = mock_post.call_args.kwargs["json"]
         assert payload["system"] == "You are helpful."
@@ -296,12 +384,14 @@ class TestClaudeAdapter:
     async def test_user_messages_passed_through(self):
         adapter = self._make_adapter()
         messages = [
-            {"role": "system",    "content": "sys"},
-            {"role": "user",      "content": "q1"},
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "q1"},
             {"role": "assistant", "content": "a1"},
-            {"role": "user",      "content": "q2"},
+            {"role": "user", "content": "q2"},
         ]
-        with patch.object(adapter._client, "post", new=AsyncMock(return_value=self._mock_response("ok"))) as mock_post:
+        with patch.object(
+            adapter._client, "post", new=AsyncMock(return_value=self._mock_response("ok"))
+        ) as mock_post:
             await adapter.generate(messages, max_tokens=100, temperature=0.2)
         assert len(mock_post.call_args.kwargs["json"]["messages"]) == 3
 
@@ -328,7 +418,9 @@ class TestClaudeAdapter:
     @pytest.mark.asyncio
     async def test_strips_whitespace_from_response(self):
         adapter = self._make_adapter()
-        with patch.object(adapter._client, "post", new=AsyncMock(return_value=self._mock_response("  trimmed  "))):
+        with patch.object(
+            adapter._client, "post", new=AsyncMock(return_value=self._mock_response("  trimmed  "))
+        ):
             result = await adapter.generate([{"role": "user", "content": "q"}], 100, 0.2)
         assert result == "trimmed"
 
@@ -337,8 +429,8 @@ class TestClaudeAdapter:
 # LLMResponseGenerator
 # ===========================================================================
 
-class TestLLMResponseGenerator:
 
+class TestLLMResponseGenerator:
     def _make_generator(self, llm_response="The answer."):
         mock_llm = MagicMock()
         mock_llm.generate = AsyncMock(return_value=llm_response)
@@ -376,7 +468,9 @@ class TestLLMResponseGenerator:
     @pytest.mark.asyncio
     async def test_propagates_auth_error(self):
         mock_llm = MagicMock()
-        mock_llm.generate = AsyncMock(side_effect=LLMAuthError("LLM API key is invalid or unauthorized"))
+        mock_llm.generate = AsyncMock(
+            side_effect=LLMAuthError("LLM API key is invalid or unauthorized")
+        )
         gen = LLMResponseGenerator(llm=mock_llm, max_tokens=200, temperature=0.2)
         with pytest.raises(LLMAuthError, match="invalid or unauthorized"):
             await gen.generate("q", SAMPLE_CHUNKS, [])

@@ -2,6 +2,29 @@
 
 All notable changes made in agent sessions are recorded here. Newest entries first.
 
+## 2026-08-24
+
+### Changed
+
+- `src/inference/embeddings.py` — extended existing `HuggingFaceEmbeddingService` (no new module): added an `HFError` exception hierarchy (`MissingHFToken`, `HFAuthError`, `HFTimeoutError`, `InvalidEmbeddingDimensions`) so embedding failures can be caught under one base type, similar in spirit to `LLMAuthError` in `llm_adapters.py`.
+- `src/inference/embeddings.py` — `_fetch_embeddings` now retries transient Hugging Face Inference API failures (HTTP 429, 502, 503, 504) up to three times with exponential backoff (`2**attempt` seconds); 401/403 fail immediately as `HFAuthError` without retry; timeouts and connection errors retry then raise `HFTimeoutError` or `HFError`.
+- `src/inference/embeddings.py` — missing `HF_TOKEN` is checked in `__init__` and raises `MissingHFToken` at service construction time (app lifespan), replacing the previous per-call `RuntimeError` in `embed()`; callers that instantiate the service without a token will fail at startup rather than on first embed.
+- `src/inference/embeddings.py` — `embed()` validates batch size (`size < 1` → `ValueError`) and adds Google-style docstrings on the module, exception classes, service, and methods; removed redundant `pass` and narrating comments; applied Ruff formatting (PEP 8 spacing, line wraps).
+
+### Added
+
+- `InvalidEmbeddingDimensions` exception class reserved for future response validation against `settings.embed_dim`; not raised yet.
+- `tests/test_inference.py` — updated embedding tests for `MissingHFToken` at construction time; added coverage for `HFAuthError`, exhausted 429/timeout retries, 429-then-success, invalid batch size, and non-retryable HTTP errors.
+
+### Fixed
+
+- `src/inference/embeddings.py` — success path returns inside the retry loop so a failed-then-success path no longer risks referencing an unassigned `data` variable after exhausted retries.
+
+### Known limitations
+
+- Retry attempt count and backoff remain hardcoded in `_fetch_embeddings` (not yet in `src/config.py`).
+- Non-retryable HTTP errors (e.g. 400, 500) still propagate as `httpx.HTTPStatusError` from `raise_for_status()`, not wrapped in `HFError`.
+
 ## Prior history
 
 1. Migrated from Minio to Vercel blob storage for deploying, added code for creating a secure upload token that the frontend can use for directly uploading to blob store.
