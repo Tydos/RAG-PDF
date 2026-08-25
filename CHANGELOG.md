@@ -2,6 +2,16 @@
 
 All notable changes made in agent sessions are recorded here. Newest entries first.
 
+## 2026-08-25
+
+### Fixed
+
+- `src/routes/chat.py` — removed the broad `except Exception` wrapper around `run_rag()` so `HTTPException`s raised by `src/services/rag.py` propagate to FastAPI unchanged. Previously, embedding failures (503) and LLM auth failures (401) were rewritten as 500; clients and tests now receive the status codes `run_rag` already defines. Reused existing error mapping in `run_rag` (no new exception types or route-level handlers).
+
+### Changed
+
+- `src/routes/chat.py` — dropped unused imports (`typing.Any`, `DBManager`); minor import reorder and whitespace cleanup.
+
 ## 2026-08-24
 
 ### Changed

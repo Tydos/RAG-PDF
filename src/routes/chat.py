@@ -1,20 +1,13 @@
 import uuid
-from typing import Any
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from src.deps import get_db, get_embedder, get_generator, get_reranker
-from src.interfaces import (
-    DatabaseProtocol,
-    EmbedderProtocol,
-    GeneratorProtocol,
-    RerankerProtocol,
-)
+from src.interfaces import DatabaseProtocol, EmbedderProtocol, GeneratorProtocol, RerankerProtocol
 from src.routes.context import blob_by_filename, is_htmx, templates
 from src.schemas import ChatRequest
 from src.services.rag import run_rag
-from src.storage.database import DBManager
 
 router = APIRouter(tags=["chat"])
 
@@ -59,34 +52,27 @@ async def chat(
         search_mode = req.search_mode
         persist = req.persist
         rerank = req.rerank
-    
+
     # Validate required fields
     if not question or not question.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Question is required",
         )
-    
-    # Call RAG pipeline
-    try:
-        result = await run_rag(
-            question=question,
-            top_k=top_k,
-            filenames=filenames,
-            search_mode=search_mode,
-            persist=persist,
-            rerank=rerank,
-            db=db,
-            embedder=embedder,
-            generator=generator,
-            reranker=reranker,
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process request: {str(e)}",
-        )
-    
+
+    result = await run_rag(
+        question=question,
+        top_k=top_k,
+        filenames=filenames,
+        search_mode=search_mode,
+        persist=persist,
+        rerank=rerank,
+        db=db,
+        embedder=embedder,
+        generator=generator,
+        reranker=reranker,
+    )
+
     # Handle HTMX vs direct API response
     if is_htmx(request):
         documents = db.list_uploads()
